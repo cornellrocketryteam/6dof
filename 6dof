@@ -610,6 +610,7 @@ function getAlignmentPlot(t::Vector{Float64}, z::Matrix{Float64})
     plot(t[displayFrom:end], alignment[displayFrom:end], xlabel = "time(s)", ylabel = "v * b3")
 
 end
+
 #code body
 begin
 
