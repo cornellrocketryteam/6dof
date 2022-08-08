@@ -656,7 +656,7 @@ begin
     # println(massData)
 
     #test IC + time
-    tspan = collect(LinRange(0.0, 40, 2000))
+    tspan = collect(LinRange(0.0, 20, 2000))
     r0 = [0.0,0.0, 1000.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
@@ -667,8 +667,10 @@ begin
 
     z = rk4(dz, tspan, z0) #solve
 
-    getQuiverPlot(z, 1)
-    getAlignmentPlot(tspan, z)
+    p1 = getQuiverPlot(z, 1)
+    p2 = getAlignmentPlot(tspan, z)
+
+    plot(p1, p2, layout = (1,2))
 
     
 
