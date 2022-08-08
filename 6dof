@@ -591,6 +591,23 @@ function getQuiverPlot(z::Matrix{Float64}, secondDirection::Int)
 
 end
 
+function getAlignmentPlot(z::Matrix{Float64})
+
+    #max array of rocket pointing vectors
+    b3_I = zeros(size(z)[1], 3)
+    for i = 1:size(z)[1]
+        b3_I[i,:] = rotateFrame([0,0,1.0], quatInv(z[i, 7:10]))
+    end
+
+    alignment = zeros(size(z)[1])
+
+    for i = 1:size(z)[1]
+        alignment[i] = dot(b3_I[i, :], z[i, 4:6])/norm(z[i, 4:6])
+    end
+
+    plot(alignment[3:end], xlabel = "points", ylabel = "v * b3")
+
+end
 #code body
 begin
 
@@ -648,6 +665,7 @@ begin
     z = rk4(dz, tspan, z0) #solve
 
     getQuiverPlot(z, 1)
+    getAlignmentPlot(z)
 
     
 
