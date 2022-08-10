@@ -18,6 +18,7 @@ using Interpolations
 using StructArrays
 using Plots
 
+
 ########structs################
 
 struct aeroDataPoint
@@ -345,6 +346,12 @@ function Ig_solidCylinder(m::Float64, h::Float64, R::Float64)
 
 end
 
+function getWind(t::Float64)
+
+    return [0.0;10.0;0.0]
+
+end
+
 #updates currentMass element of massData
 function updateMassState!(t::Float64, massData::StructArray{massElement}, motorData::Matrix{Float64})
     #t: time
@@ -360,24 +367,15 @@ function updateMassState!(t::Float64, massData::StructArray{massElement}, motorD
 
 end
 
-
-#state derivative function
-function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64})
-    #t: time
-    #z: state
-    #aeroData: data describing aero features
-    #massData: !modifies! array of mass elements
-    #motorData: data describing motor thrust
-    #returns: derivative of each element of the state
-
-    updateMassState!(t, massData, motorData)
-
-    #based on previous state
-    v = z[4:6] 
-    dqB = .5 * quatProd(z[7:10], [z[11:13];0]) #1/2 * q * [IwB; 0]
+function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement})
+    #t: time since ignition
+    #z: system state
+    #aeroData: 
+    #massData:
+    #returns: total aero force in inertial frame and total aero moment in beta frame
 
     #useful quantities
-    vAOI_I = zeros(3);
+    vAOI_I = getWind(t)
     vRAI_I = getVRA(z[4:6], vAOI_I)
     aoa = calcAoA(vRAI_I, z[7:10])
     mach = calcMach(vRAI_I)
@@ -385,38 +383,11 @@ function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacte
     A = getA(aoa, aeroData)
     ρ = expAtm_r(z[1:3])
 
-    #debug
-    # print("Velocity: ")
-    # println(z[4:6])
-    # print("AOA: ")
-    # println(aoa)
-    # print("Mach: ")
-    # println(mach)
-
-
-    #accel calc
-    #calculate mass
-    m = sum(massData.currentMass)
-    #Thrust #b3 direction 
-    thrustMag = motorThrustMass(t, motorData, massData.initalMass[2])[1]
-    thrust_B = [0.0;0.0;thrustMag]
-    thrust_I = rotateFrame(thrust_B, quatInv(z[7:10]))
-    #Gravity
-    grav_I = aGrav(z[1:3])
-    #Aero, Lift + Drag vector
     drag_I = getDrag(vRAI_I, cd, A, ρ)
     lift_I = getLift(vRAI_I, cd, A, ρ, z[7:10])
 
-    
-    a = (thrust_I + drag_I + lift_I)/m + grav_I
-
-    # print("Accel: ")
-    # println(a)
-
-    #handling rocket sitting on pad
-    if(t < 1.0 && a[3] < 0)
-        a = [0, 0, 0]
-    end
+    drag_b = rotateFrame(drag_I, z[7:10])
+    lift_b = rotateFrame(lift_I, z[7:10])
 
     #moment calcs --> only aero
     #transform drag and lift to body frame
@@ -429,13 +400,56 @@ function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacte
     rPG_B = rPR_B - rGR_B
     #aero force acting at COP
     moment_B = cross(rPG_B, drag_b + lift_b)
-    #caclulate total Ig
+
+    return (drag_I + lift_I), moment_B
+
+end
+
+
+#state derivative function
+function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64})
+    #t: time
+    #z: state
+    #aeroData: data describing aero features
+    #massData: !modifies! array of mass elements
+    #motorData: data describing motor thrust
+    #returns: derivative of each element of the state
+
+    updateMassState!(t, massData, motorData) #updates massData given the current time and motor information
+
+    #get aero forces/moments
+    totalAero_I, aeroMoment_B = totalAeroForceMoment(t, z, aeroData, massData)
+
+    #get Ig_B
     Ig_B = getIg(massData)
 
+    #accel calc
+    #calculate mass
+    m = sum(massData.currentMass)
+    #Thrust #b3 direction 
+    thrustMag = motorThrustMass(t, motorData, massData.initalMass[2])[1]
+    thrust_B = [0.0;0.0;thrustMag] #assume thrust along rocket axis
+    thrust_I = rotateFrame(thrust_B, quatInv(z[7:10]))
+    #Gravity
+    grav_I = aGrav(z[1:3])
+
+    a_I = (thrust_I + totalAero_I)/m + grav_I
+
+    #handling rocket sitting on pad
+    if(t < 1.0 && a_I[3] < 0)
+        a_I = [0.0, 0.0, 0.0]
+    end
+
+    #based on previous state
+    v_I = z[4:6] 
+    dqB = .5 * quatProd(z[7:10], [z[11:13];0]) #1/2 * q * [IwB; 0]
+
+    #total moment:
+    moment_B = aeroMoment_B
     #calc dqB_B
     dwB_B = Ig_B \ (moment_B - cross(z[11:13], Ig_B * z[11:13])) #moments shit
 
-    return [v;a;dqB;dwB_B]
+    return [v_I;a_I;dqB;dwB_B]
 end
 
 #location of COM
@@ -637,6 +651,27 @@ begin
     
     #state derivative function specific to this rocket + conditions
     dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
+
+    #test IC + time
+    tspan = collect(LinRange(0.0, 20, 2000))
+    r0 = [0.0,0.0, 1000.0]
+    v0 = [0.0,0.0,0.0]
+    n = [0;1;0]
+    θ =  pi/6
+    q0 = [sin(θ/2)*n; cos(θ/2)]
+    w0 = zeros(3)
+    z0 = [r0;v0;q0;w0]
+
+    z = rk4(dz, tspan, z0) #solve
+
+    p1 = getQuiverPlot(z,2)
+    p2 = getAlignmentPlot(tspan, z)
+    # p3 = plot3d(z[:,1], z[:,2], z[:,3])
+
+    plot(p1, p2, layout = (1,2))
+
+    
+
     
     #test state
     # n = [0;1;0]
@@ -647,32 +682,11 @@ begin
     # wi = [.05;0;0]
     # t = 1.5
     # zi = [ri;vi;q;wi]
-
-    
     
     # println(massData)
     # derivativez = dz(t, zi)
     # println(derivativez)
     # println(massData)
-
-    #test IC + time
-    tspan = collect(LinRange(0.0, 20, 2000))
-    r0 = [0.0,0.0, 1000.0]
-    v0 = [0.0,0.0,0.0]
-    n = [0;1;0]
-    θ =  pi/12
-    q0 = [sin(θ/2)*n; cos(θ/2)]
-    w0 = zeros(3)
-    z0 = [r0;v0;q0;w0]
-
-    z = rk4(dz, tspan, z0) #solve
-
-    p1 = getQuiverPlot(z, 1)
-    p2 = getAlignmentPlot(tspan, z)
-
-    plot(p1, p2, layout = (1,2))
-
-    
 
     #testing rotate frame function
     # n = [1;0;0]
