@@ -16,7 +16,7 @@
 using LinearAlgebra
 using Interpolations
 using StructArrays
-using Plots
+using PyPlot
 
 
 ########structs################
@@ -664,11 +664,14 @@ begin
 
     z = rk4(dz, tspan, z0) #solve
 
-    p1 = getQuiverPlot(z,2)
-    p2 = getAlignmentPlot(tspan, z)
-    # p3 = plot3d(z[:,1], z[:,2], z[:,3])
+    # p1 = getQuiverPlot(z,2)
+    # p2 = getAlignmentPlot(tspan, z)
+    # # p3 = plot3d(z[:,1], z[:,2], z[:,3])
 
-    plot(p1, p2, layout = (1,2))
+    # plot(p1, p2, layout = (1,2))
+
+    pygui(true)
+    plot(z[:, 2], z[:,3])
 
     
 
