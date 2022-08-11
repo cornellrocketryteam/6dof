@@ -625,6 +625,34 @@ function getAlignmentPlot(t::Vector{Float64}, z::Matrix{Float64})
 
 end
 
+function getAlignmentPlot_py(t::Vector{Float64}, z::Matrix{Float64})
+    #z: input matrix of state vectors
+    #plot: alignmnet of rocket pointing and velocity vector
+
+    displayFrom = 3
+
+    #max array of rocket pointing vectors
+    b3_I = zeros(size(z)[1], 3)
+    for i = 1:size(z)[1]
+        b3_I[i,:] = rotateFrame([0,0,1.0], quatInv(z[i, 7:10]))
+    end
+
+    alignment = zeros(size(z)[1])
+
+    for i = 1:size(z)[1]
+        alignment[i] = dot(b3_I[i, :], z[i, 4:6])/norm(z[i, 4:6])
+    end
+
+    plt = plot(t[displayFrom:end], alignment[displayFrom:end])
+    ylabel("v * b3")
+    xlabel("time(s)")
+
+    return plt
+
+end
+
+
+
 #code body
 begin
 
@@ -667,11 +695,13 @@ begin
     # p1 = getQuiverPlot(z,2)
     # p2 = getAlignmentPlot(tspan, z)
     # # p3 = plot3d(z[:,1], z[:,2], z[:,3])
+    #plot(p1, p2, layout = (1,2))
 
-    # plot(p1, p2, layout = (1,2))
 
     pygui(true)
-    plot(z[:, 2], z[:,3])
+    plt = getAlignmentPlot_py(tspan, z)
+    
+    # plot(z[:, 2], z[:,3])
 
     
 
