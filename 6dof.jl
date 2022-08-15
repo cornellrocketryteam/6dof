@@ -569,6 +569,7 @@ function addCol(matrix, index)
 
 end
 
+#for use when using Plots
 function getQuiverPlot(z::Matrix{Float64}, secondDirection::Int)
     #z: input matrix of state vectors
     #secondDimension: second dimension to be plotted (x or y)
@@ -603,6 +604,7 @@ function getQuiverPlot(z::Matrix{Float64}, secondDirection::Int)
 
 end
 
+#for use when using Plots
 function getAlignmentPlot(t::Vector{Float64}, z::Matrix{Float64})
     #z: input matrix of state vectors
     #plot: alignmnet of rocket pointing and velocity vector
@@ -625,6 +627,44 @@ function getAlignmentPlot(t::Vector{Float64}, z::Matrix{Float64})
 
 end
 
+#for use when using PyPlot
+function getQuiverPlot_py(z::Matrix{Float64}, secondDirection::Int)
+    #z: input matrix of state vectors
+    #secondDimension: second dimension to be plotted (x or y)
+    #gives quiverplot with scatter overlay
+    
+    #max array of rocket pointing vectors
+    b3_I = zeros(size(z)[1], 3)
+    for i = 1:size(z)[1]
+        b3_I[i,:] = rotateFrame([0,0,1.0], quatInv(z[i, 7:10]))
+    end
+
+    #shorten array of b3_I vectors (not as many)
+    numToPlot = 30
+    array = floor.(Int, collect(LinRange(1, size(z)[1], numToPlot)))
+    x = zeros(size(array))
+    y = zeros(size(array))
+    shortb3_I = zeros(size(array)[1], 3)
+
+    shortIndex = 1
+    for index in array
+        x[shortIndex] = z[index, secondDirection]
+        y[shortIndex] = z[index, 3]
+        shortb3_I[shortIndex, :] = b3_I[index, :]
+        shortIndex = shortIndex + 1
+    end
+
+
+    #plot  all positions
+    plot(z[:,secondDirection], z[:,3])
+    #overlay dedensified pointing arrows
+    quiver(x, y, shortb3_I[:,secondDirection], shortb3_I[:,3], width=.006)
+    axis("equal")
+    xlabel("Cross Range (m)")
+    ylabel("Local Vertical (m)")
+
+end
+#for use when using PyPlot
 function getAlignmentPlot_py(t::Vector{Float64}, z::Matrix{Float64})
     #z: input matrix of state vectors
     #plot: alignmnet of rocket pointing and velocity vector
@@ -699,11 +739,13 @@ begin
 
 
     pygui(true)
-    plt = getAlignmentPlot_py(tspan, z)
-    
+    # plt = getAlignmentPlot_py(tspan, z)
+
     # plot(z[:, 2], z[:,3])
 
+    getQuiverPlot_py(z, 2)
     
+
 
     
     #test state
