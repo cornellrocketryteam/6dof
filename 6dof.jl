@@ -305,12 +305,12 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
     #ρ: air density (kg/m^3)
 
     d1 = vRAI_I/norm(vRAI_I); #airflow direction
-    b3_I = rotateFrame([0;0;1], quatInv(q)) #dirction of rocket axis in intertial frame components
+    b3_I = rotateFrame([0.0;0.0;1.0], quatInv(q)) #dirction of rocket axis in intertial frame components
 
     #probably impliment householder rotation soon instead, for now subtract off
 
     unnormed = b3_I - d1
-    liftDirection = unormed/norm(unnormed)
+    liftDirection = unnormed/norm(unnormed)
     mag = .5 * Cl  * ρ * norm(vRAI_I)^2 * A
 
     return liftDirection * mag
@@ -396,11 +396,12 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
     aoa = calcAoA(vRAI_I, z[7:10])
     mach = calcMach(vRAI_I)
     cd = getCd(aoa, mach, aeroData)
+    cl = getCl(aoa, mach, aeroData)
     A = getA(aoa, aeroData)
     ρ = expAtm_r(z[1:3])
 
     drag_I = getDrag(vRAI_I, cd, A, ρ)
-    lift_I = getLift(vRAI_I, cd, A, ρ, z[7:10])
+    lift_I = getLift(vRAI_I, cl, A, ρ, z[7:10])
 
     drag_b = rotateFrame(drag_I, z[7:10])
     lift_b = rotateFrame(lift_I, z[7:10])
