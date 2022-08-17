@@ -298,7 +298,23 @@ function getDrag(vRAI_I::Vector{Float64}, Cd::Float64, A::Float64, ρ::Float64)
 end
 
 #lift force
-function getLift(vRAI_I::Vector{Float64}, Cd::Float64, A::Float64, ρ::Float64, q::Vector{Float64})
+function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, q::Vector{Float64})
+    #vRAI_I: velocity of rocket wrt to air (m/s)
+    #Cl: coefficient of lift
+    #A: area normal to velcoty vector
+    #ρ: air density (kg/m^3)
+
+    d1 = vRAI_I/norm(vRAI_I); #airflow direction
+    b3_I = rotateFrame([0;0;1], quatInv(q)) #dirction of rocket axis in intertial frame components
+
+    #probably impliment householder rotation soon instead, for now subtract off
+
+    unnormed = b3_I - d1
+    liftDirection = unormed/norm(unnormed)
+    mag = .5 * Cl  * ρ * norm(vRAI_I)^2 * A
+
+    return liftDirection * mag
+
     return zeros(3)
 end
 
@@ -781,10 +797,10 @@ begin
     pygui(true)
     # plt = getAlignmentPlot_py(tspan, z)
 
-    #getQuiverPlot_py(z, 2)
-    
-    figure()
-    get3DQuiverPlot_py(z)
+    getQuiverPlot_py(z, 2)
+    #axis("equal")
+
+    #get3DQuiverPlot_py(z)
     #plot3D(z[:,1], z[:,2], z[:,3])
 
 
