@@ -319,10 +319,10 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
 end
 
 #mach number
-function calcMach(vRAI_I)
+function calcMach(vRAI_I, h)
     #vRAI_I: velocity of body wrt to air
     #returns: mach number 
-    return norm(vRAI_I)/340
+    return norm(vRAI_I)/getLocalSoS(h)
 end
 
 #velocity of rocket wrt to air
@@ -368,6 +368,53 @@ function getWind(t::Float64)
 
 end
 
+function getLocalSoS(h::Float64)
+    #h: height above sea level (m)
+    #return: speed of sound in m/s
+
+    #retrieved from https://www.engineeringtoolbox.com/elevation-speed-sound-air-d_1534.html
+
+    speeds = [344.1
+    342.2
+    340.3
+    339.3
+    338.4
+    337.4
+    336.4
+    335.5
+    334.5
+    333.5
+    332.5
+    330.6
+    328.6
+    326.6
+    324.6
+    322.6
+    320.5]
+
+    altitudes = [-1000
+    -500
+    0
+    250
+    500
+    750
+    1000
+    1250
+    1500
+    1750
+    2000
+    2500
+    3000
+    3500
+    4000
+    4500
+    5000]
+
+    interp = LinearInterpolation(altitudes, speeds)
+    return interp(h)
+
+end
+
 #updates currentMass element of massData
 function updateMassState!(t::Float64, massData::StructArray{massElement}, motorData::Matrix{Float64})
     #t: time
@@ -394,7 +441,7 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
     vAOI_I = getWind(t)
     vRAI_I = getVRA(z[4:6], vAOI_I)
     aoa = calcAoA(vRAI_I, z[7:10])
-    mach = calcMach(vRAI_I)
+    mach = calcMach(vRAI_I, z[3])
     cd = getCd(aoa, mach, aeroData)
     cl = getCl(aoa, mach, aeroData)
     A = getA(aoa, aeroData)
