@@ -17,6 +17,7 @@ using LinearAlgebra
 using Interpolations
 using StructArrays
 using PyPlot
+using Optim
 
 
 ########structs################
@@ -871,7 +872,33 @@ function penalty(v1, v2)
     length = min(size(v1)[1], size(v2)[1])
 
     return sum((v1[1:length] .- v2[1:length]).^2)
+end
 
+function run_penalty(z0, tspan, aeroData, massData, motorData, flightData)
+
+    dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData)
+    z = rk4(dz, tspan, z0)
+
+    dt_data = flightData[2,1]
+    tspanf, zf = changeTimeData(z, tspan, dt_data)
+
+    tspan_aligned, zf_aligned = align(tspanf, zf, 7)  #hardcoded alignment offset
+
+    return penalty(zf_aligned[:,3], flightData[:,2])
+
+end
+
+function aeroData_Cd_Mach(mach, Cd_Mach)
+    #makes aeroDataSet given coefficients of drag for each mach number
+
+    aeroData = aeroCharacterization()
+    for i = 1:length(mach)
+        addData!(aeroData, aeroDataPoint(0.0, mach[i], Cd_Mach[i], 0, -2.8, .02284))
+        addData!(aeroData, aeroDataPoint(pi/2, mach[i], Cd_Mach[i], .05, -2.8, .55))
+        addData!(aeroData, aeroDataPoint(pi, mach[i], Cd_Mach[i], 0, -2.8, .02284))
+    end
+
+    return aeroData
 end
 
 #code body
@@ -897,16 +924,16 @@ begin
 
     #aero properties (fixed)
     dataSet = aeroCharacterization()
-    addData!(dataSet, aeroDataPoint(0.0, 0.0, 0.26, 0, -2.8, .02284))
-    addData!(dataSet, aeroDataPoint(pi/2, 0.0, 0.26, .1, -2.8, 2.7))
-    addData!(dataSet, aeroDataPoint(0.0, 2.0, 0.26, 0, -2.9, .02284))
-    addData!(dataSet, aeroDataPoint(pi/2, 2.0, 0.26, .1, -2.9, 2.7))
+    addData!(dataSet, aeroDataPoint(0.0, 0.0, 0.36, 0, -2.8, .02284))
+    addData!(dataSet, aeroDataPoint(pi/2, 0.0, 0.36, .1, -2.8, .55))
+    addData!(dataSet, aeroDataPoint(0.0, 2.0, 0.36, 0, -2.9, .02284))
+    addData!(dataSet, aeroDataPoint(pi/2, 2.0, 0.36, .1, -2.9, .55))
     
     #state derivative function specific to this rocket + conditions
     dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
 
     #test IC + time
-    tspan = collect(LinRange(0.0, 20, 2000))
+    tspan = collect(LinRange(0.0, 24, 2000))
     r0 = [0.0,0.0, 1000.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
@@ -914,18 +941,25 @@ begin
     q0 = [sin(θ/2)*n; cos(θ/2)]
     w0 = zeros(3)
     z0 = [r0;v0;q0;w0]
-    z = rk4(dz, tspan, z0) #solve
+    #z = rk4(dz, tspan, z0) #solve
 
-    tspanf, zf = changeTimeData(z, tspan, .05)
-    zf[:,3] = zf[:,3] .- zf[1,3]
+    
+    penalty_Cd_Mach(cd_mach) = run_penalty(z0, tspan, aeroData_Cd_Mach([0.0, .2, .4, .6, .8, 1.0], cd_mach), massData, motorData, flightData)
 
-    tspan_aligned, zf_aligned = align(tspanf, zf, 7) #manually aligned by visually trying to match curves at beginning
-
-    pygui(true)
-    plot(tspan_aligned, zf_aligned[:,3])
-    plot(flightData[:,1], flightData[:,2])
+    optimal_cd_mach = optimize(penalty_Cd_Mach, ones(6)*.4)
 
     ############ Past Testing ##########
+
+    #println(run_penalty(z0, tspan, dataSet, massData, motorData, flightData))
+
+    # tspanf, zf = changeTimeData(z, tspan, .05)
+    # zf[:,3] = zf[:,3] .- zf[1,3]
+
+    # tspan_aligned, zf_aligned = align(tspanf, zf, 7) #manually aligned by visually trying to match curves at beginning
+
+    # pygui(true)
+    # plot(tspan_aligned, zf_aligned[:,3])
+    # plot(flightData[:,1], flightData[:,2])
 
     # p1 = getQuiverPlot(z,2)
     # p2 = getAlignmentPlot(tspan, z)
