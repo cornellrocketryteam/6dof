@@ -193,6 +193,28 @@ function readMotorData(thrustCurveFilePath::String)
     return motorData
 end
 
+function readRRC3Data(flightDataFilePath::String)
+
+    mpf = 0.3048 #meters per foot conversion
+
+    flightData = [0,0]'
+
+    file = open(flightDataFilePath, "r")
+
+    headerline = readline(file)
+
+    while !eof(file)
+        line = readline(file)
+        
+        numbersString = split(line, ',')
+        dataLine = [parse(Float64, numbersString[1]), parse(Float64, numbersString[2]) * mpf]'
+        flightData = vcat(flightData, dataLine)
+    end
+
+    flightData = flightData[2:end, :]
+    return flightData
+end
+
 #gives mass and thrust of motor for given time after ignition
 function motorThrustMass(t::Float64, motorData::Matrix{Float64}, initalPropMass::Float64)
 
@@ -305,6 +327,11 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
     #ρ: air density (kg/m^3)
 
     d1 = vRAI_I/norm(vRAI_I); #airflow direction
+
+    if any(isnan.(d1))
+        return zeros(3)
+    end
+
     b3_I = rotateFrame([0.0;0.0;1.0], quatInv(q)) #dirction of rocket axis in intertial frame components
 
     #probably impliment householder rotation soon instead, for now subtract off
@@ -314,8 +341,6 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
     mag = .5 * Cl  * ρ * norm(vRAI_I)^2 * A
 
     return liftDirection * mag
-
-    return zeros(3)
 end
 
 #mach number
@@ -342,7 +367,7 @@ function calcAoA(vRAI_I::Vector{Float64}, q::Vector{Float64})
     b3B = [0.0;0.0;1.0]
     b3I = rotateFrame(b3B, quatInv(q))
 
-    if(norm(vRAI_I) < 1e-15)
+    if(norm(vRAI_I) < 1e-13)
         return 0.0
     end
     
@@ -362,9 +387,12 @@ function Ig_solidCylinder(m::Float64, h::Float64, R::Float64)
 
 end
 
-function getWind(t::Float64)
+function getWind(t::Float64, h::Float64)
+    #t: time since ignition
+    #h: height above sea level
+    #return: VAOI_I
 
-    return [0.0;10.0;0.0]
+    return [0.0;0.0;0.0]
 
 end
 
@@ -438,7 +466,7 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
     #returns: total aero force in inertial frame and total aero moment in beta frame
 
     #useful quantities
-    vAOI_I = getWind(t)
+    vAOI_I = getWind(t, z[3])
     vRAI_I = getVRA(z[4:6], vAOI_I)
     aoa = calcAoA(vRAI_I, z[7:10])
     mach = calcMach(vRAI_I, z[3])
@@ -447,6 +475,7 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
     A = getA(aoa, aeroData)
     ρ = expAtm_r(z[1:3])
 
+    
     drag_I = getDrag(vRAI_I, cd, A, ρ)
     lift_I = getLift(vRAI_I, cl, A, ρ, z[7:10])
 
@@ -468,7 +497,6 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
     return (drag_I + lift_I), moment_B
 
 end
-
 
 #state derivative function
 function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64})
@@ -496,7 +524,7 @@ function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacte
     thrust_I = rotateFrame(thrust_B, quatInv(z[7:10]))
     #Gravity
     grav_I = aGrav(z[1:3])
-
+    
     a_I = (thrust_I + totalAero_I)/m + grav_I
 
     #handling rocket sitting on pad
@@ -631,6 +659,36 @@ function addCol(matrix, index)
 
     return [matrix[:, 1:(index-1)] zeros(size(matrix)[1]) matrix[:, index:end]]
 
+end
+
+
+function changeTimeData(z, tspan0::Vector{Float64}, dtf::Float64)
+    #z: state vector
+    #tspan0: original time vector (aligns with z)
+    #dtf: desired final timeStep
+    #return: tspanf time array corresponding to zf the new data. 
+
+    tspanf = collect(LinRange(0.0, tspan0[end], round(Int, tspan0[end]/dtf) + 1))
+    zf = zeros(length(tspanf), size(z)[2])
+
+    for j = 1:length(tspanf)
+
+        #time to find z value
+        t = tspanf[j]
+
+        #find index where t is valid
+        index = 0
+        for i = 2:length(tspan0)
+            if(t <= tspan0[i])
+                index = i - 1
+                break
+            end
+        end
+
+        zf[j, :] = z[index,:] + (z[index+1,:]-z[index,:])./(tspan0[index+1]-tspan0[index]) .* (t - tspan0[index])
+    end
+
+    return tspanf, zf
 end
 
 #for use when using Plots
@@ -795,7 +853,26 @@ function getAlignmentPlot_py(t::Vector{Float64}, z::Matrix{Float64})
 
 end
 
+function align(tspan, z, offset)
 
+    zf = z[offset:end, :]
+    zf[:,3] = zf[:,3] .- zf[1,3] #reset z3 = 0
+
+    tspanf = tspan[1:end-offset+1]
+
+    return tspanf, zf
+end
+
+function penalty(v1, v2)
+    #v1: nx1 vector
+    #v2: mx1 vector
+    #returns sum of the squares of the differences between v1i - v2i for the first min(m,n) components
+
+    length = min(size(v1)[1], size(v2)[1])
+
+    return sum((v1[1:length] .- v2[1:length]).^2)
+
+end
 
 #code body
 begin
@@ -809,6 +886,10 @@ begin
     motorData = readMotorData(thrustCurveFileName) #s, N
     # initalPropMass = 6.363 #kg
 
+    #read in flight data to compare to 
+    flightDataFilePath = "/Users/Sam/Desktop/Code/6dof/SP22CompData.csv"
+    flightData = readRRC3Data(flightDataFilePath)
+
     #dynamic mass properties
     mainBodyIg(m) = Ig_solidCylinder(m, 3.6, .075)
     motorIg(m) = Ig_solidCylinder(m, 1.0, .05)
@@ -816,10 +897,10 @@ begin
 
     #aero properties (fixed)
     dataSet = aeroCharacterization()
-    addData!(dataSet, aeroDataPoint(0.0, 0.0, 0.5, 0, -2.8, .72))
-    addData!(dataSet, aeroDataPoint(3.14153, 0.0, .6, .1, -2.8, 2.7))
-    addData!(dataSet, aeroDataPoint(0.0, 2.0, .6, 0, -2.9, .72))
-    addData!(dataSet, aeroDataPoint(3.14153, 2.0, .7, .1, -2.9, 2.7))
+    addData!(dataSet, aeroDataPoint(0.0, 0.0, 0.26, 0, -2.8, .02284))
+    addData!(dataSet, aeroDataPoint(pi/2, 0.0, 0.26, .1, -2.8, 2.7))
+    addData!(dataSet, aeroDataPoint(0.0, 2.0, 0.26, 0, -2.9, .02284))
+    addData!(dataSet, aeroDataPoint(pi/2, 2.0, 0.26, .1, -2.9, 2.7))
     
     #state derivative function specific to this rocket + conditions
     dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
@@ -829,12 +910,22 @@ begin
     r0 = [0.0,0.0, 1000.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
-    θ =  pi/6
+    θ =  .07
     q0 = [sin(θ/2)*n; cos(θ/2)]
     w0 = zeros(3)
     z0 = [r0;v0;q0;w0]
-
     z = rk4(dz, tspan, z0) #solve
+
+    tspanf, zf = changeTimeData(z, tspan, .05)
+    zf[:,3] = zf[:,3] .- zf[1,3]
+
+    tspan_aligned, zf_aligned = align(tspanf, zf, 7) #manually aligned by visually trying to match curves at beginning
+
+    pygui(true)
+    plot(tspan_aligned, zf_aligned[:,3])
+    plot(flightData[:,1], flightData[:,2])
+
+    ############ Past Testing ##########
 
     # p1 = getQuiverPlot(z,2)
     # p2 = getAlignmentPlot(tspan, z)
@@ -842,17 +933,19 @@ begin
     #plot(p1, p2, layout = (1,2))
 
 
-    pygui(true)
+    # pygui(true)
     # plt = getAlignmentPlot_py(tspan, z)
 
-    getQuiverPlot_py(z, 2)
+    # getQuiverPlot_py(z, 2)
+
+
     #axis("equal")
 
     #get3DQuiverPlot_py(z)
     #plot3D(z[:,1], z[:,2], z[:,3])
 
 
-    
+   
     #test state
     # n = [0;1;0]
     # θ = pi/24 #7.5deg
