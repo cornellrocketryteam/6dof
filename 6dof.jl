@@ -855,6 +855,9 @@ function getAlignmentPlot_py(t::Vector{Float64}, z::Matrix{Float64})
 end
 
 function align(tspan, z, offset)
+    #tspan: time vector
+    #z: state vector as aligns with tspan
+    #offset: number of data points to cut off the beginning of z
 
     zf = z[offset:end, :]
     zf[:,3] = zf[:,3] .- zf[1,3] #reset z3 = 0
@@ -875,6 +878,7 @@ function penalty(v1, v2)
 end
 
 function run_penalty(z0, tspan, aeroData, massData, motorData, flightData)
+    #run simulation with given parameters (z0, tspan, aeroData, massData, motorData) and calculate penal
 
     dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData)
     z = rk4(dz, tspan, z0)
@@ -888,13 +892,49 @@ function run_penalty(z0, tspan, aeroData, massData, motorData, flightData)
 
 end
 
+function run_plotz3(z0, tspan, aeroData, massData, motorData, flightData)
+    #runs simulation based on z0, tspan, aeroData, massData, motorData. 
+    #Plots flight data as well
+
+    dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData)
+    z = rk4(dz, tspan, z0)
+
+    dt_data = flightData[2,1]
+    tspanf, zf = changeTimeData(z, tspan, dt_data)
+
+    tspan_aligned, zf_aligned = align(tspanf, zf, 7)  #hardcoded alignment offset
+
+    pygui(true)
+    plot(tspan_aligned, zf_aligned[:,3])
+    plot(flightData[1:length(tspanf)+50,1], flightData[1:length(tspanf)+50,2])
+
+end
+
+function run_plotz3(z0, tspan, aeroData, massData, motorData)
+    #runs simulation and plots height as a function of time
+
+    dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData)
+    z = rk4(dz, tspan, z0)
+
+    pygui(true)
+    plot(tspan, z[:,3])
+
+end
+
+
+
 function aeroData_Cd_Mach(mach, Cd_Mach)
-    #makes aeroDataSet given coefficients of drag for each mach number
+    #mach: array of mach numbers
+    #Cd_mach: corresponding Cd for each mach number in Mach
+    #returns: aeroDataSet
+
+    #makes aeroDataSet given coefficients of drag for each mach number. Assumes Cd is constant for each AoA. Only varies with mach number as given 
+    #quantities that vary with AoA including A and Cl are hardcoded. 
 
     aeroData = aeroCharacterization()
     for i = 1:length(mach)
         addData!(aeroData, aeroDataPoint(0.0, mach[i], Cd_Mach[i], 0, -2.8, .02284))
-        addData!(aeroData, aeroDataPoint(pi/2, mach[i], Cd_Mach[i], .05, -2.8, .55))
+        addData!(aeroData, aeroDataPoint(pi/2, mach[i], Cd_Mach[i], 0, -2.8, .55))
         addData!(aeroData, aeroDataPoint(pi, mach[i], Cd_Mach[i], 0, -2.8, .02284))
     end
 
@@ -907,6 +947,8 @@ begin
     ######### conventions #################
     #point R is defined at tip of nose cone. All positions relative to rocket are relative to the nosecone. 
     #########parameter definitions###########
+
+    ##Generic Set up##
 
     #motor info
     thrustCurveFileName = "/Users/Sam/Desktop/Code/6dof/Cesaroni_13628N5600-P.eng"
@@ -934,7 +976,7 @@ begin
 
     #test IC + time
     tspan = collect(LinRange(0.0, 24, 2000))
-    r0 = [0.0,0.0, 1000.0]
+    r0 = [0.0,0.0, 1400.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
     θ =  .07
@@ -943,10 +985,21 @@ begin
     z0 = [r0;v0;q0;w0]
     #z = rk4(dz, tspan, z0) #solve
 
-    
-    penalty_Cd_Mach(cd_mach) = run_penalty(z0, tspan, aeroData_Cd_Mach([0.0, .2, .4, .6, .8, 1.0], cd_mach), massData, motorData, flightData)
+    ##  ##  ##  ##  ##
 
-    optimal_cd_mach = optimize(penalty_Cd_Mach, ones(6)*.4)
+    machArray = [0.0, 0.3, 0.6, 0.9]
+
+    # penalty_Cd_Mach(cd_mach) = run_penalty(z0, tspan, aeroData_Cd_Mach(machArray, cd_mach), massData, motorData, flightData)
+
+    # println("Begin Optimize")
+    # lower = ones(length(machArray)) * .2
+    # upper = ones(length(machArray)) * .8
+    # results = optimize(penalty_Cd_Mach, lower, upper, ones(length(machArray))*.4)
+    # optim_cd_mach = Optim.minimizer(results)
+
+    # println(optim_cd_mach)
+
+    run_plotz3(z0, tspan, aeroData_Cd_Mach(machArray, ones(length(machArray))* 0.45), massData, motorData, flightData)
 
     ############ Past Testing ##########
 
