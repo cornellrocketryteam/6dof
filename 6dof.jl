@@ -965,6 +965,15 @@ function run_plotz3(z0, tspan, aeroData, massData, motorData)
 
 end
 
+function run(z0, tspan, aeroData, massData, motorData)
+    #runs simulation and plots height as a function of time
+
+    dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData)
+
+    return rk4(dz, tspan, z0)
+
+end
+
 function aeroData_Cd_Mach(mach, Cd_Mach)
     #mach: array of mach numbers
     #Cd_mach: corresponding Cd for each mach number in Mach
@@ -1017,11 +1026,11 @@ begin
     dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
 
     #test IC + time
-    tspan = collect(LinRange(0.0, 35, 2000))
+    tspan = collect(LinRange(0.0, 25, 2000))
     r0 = [0.0,0.0, 1400.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
-    θ =  .07
+    θ =  pi/24   #~5deg = .07
     q0 = [sin(θ/2)*n; cos(θ/2)]
     w0 = zeros(3)
     z0 = [r0;v0;q0;w0]
