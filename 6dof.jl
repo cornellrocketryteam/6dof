@@ -1,6 +1,8 @@
 #6DoF modoel for the Cornell Rocketry Team 
 #Written in 2022 by Samuel Noles
 
+#PyPlot Plotting Examples: https://gist.github.com/gizmaa/7214002#multiaxis
+
 #########info##############
 
 #system state: z = [r v q w]
@@ -198,7 +200,7 @@ function readRRC3Data(flightDataFilePath::String)
 
     mpf = 0.3048 #meters per foot conversion
 
-    flightData = [0,0]'
+    flightData = [0,0,0]'
 
     file = open(flightDataFilePath, "r")
 
@@ -208,7 +210,7 @@ function readRRC3Data(flightDataFilePath::String)
         line = readline(file)
         
         numbersString = split(line, ',')
-        dataLine = [parse(Float64, numbersString[1]), parse(Float64, numbersString[2]) * mpf]'
+        dataLine = [parse(Float64, numbersString[1]), parse(Float64, numbersString[2]) * mpf, parse(Float64, numbersString[4]) * mpf]'
         flightData = vcat(flightData, dataLine)
     end
 
@@ -329,6 +331,7 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
 
     d1 = vRAI_I/norm(vRAI_I); #airflow direction
 
+    #if normVRAI_I is 0 (no airspeed)
     if any(isnan.(d1))
         return zeros(3)
     end
@@ -337,7 +340,7 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
 
     #probably impliment householder rotation soon instead, for now subtract off
 
-    unnormed = b3_I - d1
+    unnormed = b3_I - dot(b3_I, d1) * d1
     liftDirection = unnormed/norm(unnormed)
     mag = .5 * Cl  * ρ * norm(vRAI_I)^2 * A
 
@@ -662,7 +665,6 @@ function addCol(matrix, index)
 
 end
 
-
 function changeTimeData(z, tspan0::Vector{Float64}, dtf::Float64)
     #z: state vector
     #tspan0: original time vector (aligns with z)
@@ -778,6 +780,7 @@ function getQuiverPlot_py(z::Matrix{Float64}, secondDirection::Int)
     end
 
 
+    fig = figure("Quiver",figsize=(10,10))
     #plot  all positions
     plot(z[:,secondDirection], z[:,3])
     #overlay dedensified pointing arrows
@@ -824,6 +827,47 @@ function get3DQuiverPlot_py(z::Matrix{Float64})
     xlabel("e1 (m)")
     ylabel("e2 (m)")
     zlabel("e3 (m)")
+
+end
+
+function getAoAPlot_py(t, z::Matrix{Float64})
+    #z: Simulation state vector output (nx13)
+    #plots AoA vs time a
+
+    aoa = zeros(size(z)[1])
+
+    for (index, zi) in enumerate(eachrow(z))
+        vAOI_I = getWind(t[index], zi[3])
+        vRAI_I = getVRA(zi[4:6], vAOI_I)
+        aoa[index] = calcAoA(vRAI_I, zi[7:10])
+    end
+
+    pygui(true)
+    fig = figure("AoA + Altitude vs Time",figsize=(10,10))
+    p = plot(t,aoa,linestyle="-",marker="o",label="AoA") # Plot a basic line
+    ax = gca()
+    PyPlot.title("AoA + Altitude vs Time")
+
+    xlabel("time (s)")
+    font1 = Dict("color"=>"blue")
+    ylabel("AoA (Rad)",fontdict=font1)
+    setp(ax.get_yticklabels(),color="blue") # Y Axis font formatting
+
+    ################
+    #  Other Axes  #
+    ################
+
+    new_position = [0.06;0.06;0.77;0.91] # Position Method 2
+    ax.set_position(new_position) # Position Method 2: Change the size and position of the axis
+    #fig.subplots_adjust(right=0.85) # Position Method 1
+
+    ax2 = ax.twinx() # Create another axis on top of the current axis
+    font2 = Dict("color"=>"purple")
+    ylabel("Altitude (m)",fontdict=font2)
+    p = plot(t,z[:,3],color="purple",linestyle="-",marker="o",label="Altitude") # Plot a basic line
+    ax2.set_position(new_position) # Position Method 2
+    setp(ax2.get_yticklabels(),color="purple") # Y Axis font formatting
+    
 
 end
 
@@ -921,8 +965,6 @@ function run_plotz3(z0, tspan, aeroData, massData, motorData)
 
 end
 
-
-
 function aeroData_Cd_Mach(mach, Cd_Mach)
     #mach: array of mach numbers
     #Cd_mach: corresponding Cd for each mach number in Mach
@@ -966,16 +1008,16 @@ begin
 
     #aero properties (fixed)
     dataSet = aeroCharacterization()
-    addData!(dataSet, aeroDataPoint(0.0, 0.0, 0.36, 0, -2.8, .02284))
-    addData!(dataSet, aeroDataPoint(pi/2, 0.0, 0.36, .1, -2.8, .55))
-    addData!(dataSet, aeroDataPoint(0.0, 2.0, 0.36, 0, -2.9, .02284))
-    addData!(dataSet, aeroDataPoint(pi/2, 2.0, 0.36, .1, -2.9, .55))
+    addData!(dataSet, aeroDataPoint(0.0, 0.0, 0.4, 0, -2.8, .02284))
+    addData!(dataSet, aeroDataPoint(pi/2, 0.0, 0.4, .1, -2.8, .55))
+    addData!(dataSet, aeroDataPoint(0.0, 2.0, 0.4, 0, -2.9, .02284))
+    addData!(dataSet, aeroDataPoint(pi/2, 2.0, 0.4, .1, -2.9, .55))
     
     #state derivative function specific to this rocket + conditions
     dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
 
     #test IC + time
-    tspan = collect(LinRange(0.0, 24, 2000))
+    tspan = collect(LinRange(0.0, 35, 2000))
     r0 = [0.0,0.0, 1400.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
@@ -983,11 +1025,18 @@ begin
     q0 = [sin(θ/2)*n; cos(θ/2)]
     w0 = zeros(3)
     z0 = [r0;v0;q0;w0]
-    #z = rk4(dz, tspan, z0) #solve
+    z = rk4(dz, tspan, z0) #solve
 
     ##  ##  ##  ##  ##
 
-    machArray = [0.0, 0.3, 0.6, 0.9]
+    getAoAPlot_py(tspan, z)
+
+    getQuiverPlot_py(z, 1)
+
+
+    ############ Past Testing ##########
+
+    #machArray = [0.0, 0.3, 0.6, 0.9]
 
     # penalty_Cd_Mach(cd_mach) = run_penalty(z0, tspan, aeroData_Cd_Mach(machArray, cd_mach), massData, motorData, flightData)
 
@@ -997,13 +1046,11 @@ begin
     # results = optimize(penalty_Cd_Mach, lower, upper, ones(length(machArray))*.4)
     # optim_cd_mach = Optim.minimizer(results)
 
-    optim_cd_mach = [7.546637207833306e-16, 1.232595164407831e-32, 0.408539334379877, 0.7999999999999999]
+    #optim_cd_mach = [7.546637207833306e-16, 1.232595164407831e-32, 0.408539334379877, 0.7999999999999999]
 
     # println(optim_cd_mach)
 
-    run_plotz3(z0, tspan, aeroData_Cd_Mach(machArray, optim_cd_mach), massData, motorData, flightData)
-
-    ############ Past Testing ##########
+    #run_plotz3(z0, tspan, aeroData_Cd_Mach(machArray, optim_cd_mach), massData, motorData, flightData)
 
     #Cd Results 9-2-22 Run: [7.546637207833306e-16, 1.232595164407831e-32, 0.408539334379877, 0.7999999999999999] Mach(0.0, 0.3, 0.6, 0.9)
 
