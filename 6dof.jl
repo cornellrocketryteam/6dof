@@ -951,12 +951,12 @@ begin
     ##Generic Set up##
 
     #motor info
-    thrustCurveFileName = "/Users/Sam/Desktop/Code/6dof/Cesaroni_13628N5600-P.eng"
+    thrustCurveFileName = "Cesaroni_13628N5600-P.eng"
     motorData = readMotorData(thrustCurveFileName) #s, N
     # initalPropMass = 6.363 #kg
 
     #read in flight data to compare to 
-    flightDataFilePath = "/Users/Sam/Desktop/Code/6dof/SP22CompData.csv"
+    flightDataFilePath = "SP22CompData.csv"
     flightData = readRRC3Data(flightDataFilePath)
 
     #dynamic mass properties
@@ -992,16 +992,20 @@ begin
     # penalty_Cd_Mach(cd_mach) = run_penalty(z0, tspan, aeroData_Cd_Mach(machArray, cd_mach), massData, motorData, flightData)
 
     # println("Begin Optimize")
-    # lower = ones(length(machArray)) * .2
+    # lower = zeros(length(machArray))
     # upper = ones(length(machArray)) * .8
     # results = optimize(penalty_Cd_Mach, lower, upper, ones(length(machArray))*.4)
     # optim_cd_mach = Optim.minimizer(results)
 
+    optim_cd_mach = [7.546637207833306e-16, 1.232595164407831e-32, 0.408539334379877, 0.7999999999999999]
+
     # println(optim_cd_mach)
 
-    run_plotz3(z0, tspan, aeroData_Cd_Mach(machArray, ones(length(machArray))* 0.45), massData, motorData, flightData)
+    run_plotz3(z0, tspan, aeroData_Cd_Mach(machArray, optim_cd_mach), massData, motorData, flightData)
 
     ############ Past Testing ##########
+
+    #Cd Results 9-2-22 Run: [7.546637207833306e-16, 1.232595164407831e-32, 0.408539334379877, 0.7999999999999999] Mach(0.0, 0.3, 0.6, 0.9)
 
     #println(run_penalty(z0, tspan, dataSet, massData, motorData, flightData))
 
