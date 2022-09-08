@@ -62,6 +62,16 @@ mutable struct aeroCharacterization
 
     aeroCharacterization() = new([],[],Array{Float64}(undef, 0, 0),Array{Float64}(undef, 0, 0),Array{Float64}(undef, 0, 0),[])
 
+    aeroCharacterization(AoA, Mach, Cd, Cl, COP, A) = new(AoA, Mach, Cd, Cl, COP, A)
+
+end
+
+struct rocket
+
+    aeroData::aeroCharacterization
+    massData::StructArray{massElement}
+    motorData::Matrix{Float64}
+
 end
 
 #########functions (majority of project)#########
@@ -993,7 +1003,7 @@ function aeroData_Cd_Mach(mach, Cd_Mach)
 end
 
 #code body
-begin
+let
 
     ######### conventions #################
     #point R is defined at tip of nose cone. All positions relative to rocket are relative to the nosecone. 
@@ -1001,29 +1011,26 @@ begin
 
     ##Generic Set up##
 
-    #motor info
+    #hard coded sim parameters --> soon to be moved to JSON
     thrustCurveFileName = "Cesaroni_13628N5600-P.eng"
-    motorData = readMotorData(thrustCurveFileName) #s, N
-    # initalPropMass = 6.363 #kg
-
-    #read in flight data to compare to 
     flightDataFilePath = "SP22CompData.csv"
-    flightData = readRRC3Data(flightDataFilePath)
 
-    #dynamic mass properties
-    mainBodyIg(m) = Ig_solidCylinder(m, 3.6, .075)
-    motorIg(m) = Ig_solidCylinder(m, 1.0, .05)
-    massData = StructArray([massElement([0;0;-2.2], 41.036, 41.036, mainBodyIg(41.036), mainBodyIg), massElement([0;0;-3.48], 6.363, 6.363, [1 0 0; 0 1 0; 0 0 1], motorIg)])
+    mainBodyLength::Float64 = 3.6
+    mainBodyDiameter::Float64 = .075
+    staticBodyCOM::Vector{Float64} = [0,0,-2.2]
+    staticBodyMass::Float64 = 41.036
 
-    #aero properties (fixed)
-    dataSet = aeroCharacterization()
-    addData!(dataSet, aeroDataPoint(0.0, 0.0, 0.4, 0, -2.8, .02284))
-    addData!(dataSet, aeroDataPoint(pi/2, 0.0, 0.4, .1, -2.8, .55))
-    addData!(dataSet, aeroDataPoint(0.0, 2.0, 0.4, 0, -2.9, .02284))
-    addData!(dataSet, aeroDataPoint(pi/2, 2.0, 0.4, .1, -2.9, .55))
-    
-    #state derivative function specific to this rocket + conditions
-    dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
+    propellantLength::Float64 = 1.0
+    propellantDiameter::Float64 = .05
+    propellantInitialMass::Float64 = 6.363
+    propellantCOM::Vector{Float64} = [0,0,-3.48]
+
+    AoA::Vector{Float64} = [0.0, pi/2]
+    Mach::Vector{Float64} = [0.0, 2.0]
+    Cd::Matrix{Float64} = ones(2,2) * .4
+    Cl::Matrix{Float64} = [0.0 0.0; 1.0 1.0]
+    COP::Matrix{Float64} = [-2.8 -2.8; -2.9 -2.9]
+    A::Vector{Float64} = [.02284, .55]
 
     #test IC + time
     tspan = collect(LinRange(0.0, 25, 2000))
@@ -1033,6 +1040,26 @@ begin
     θ =  pi/24   #~5deg = .07
     q0 = [sin(θ/2)*n; cos(θ/2)]
     w0 = zeros(3)
+
+    #motor info
+    motorData = readMotorData(thrustCurveFileName) #s, N
+    # initalPropMass = 6.363 #kg
+
+    #read in flight data to compare to 
+    flightData = readRRC3Data(flightDataFilePath)
+
+    #dynamic mass properties
+    mainBodyIg(m) = Ig_solidCylinder(m, mainBodyLength, mainBodyDiameter)
+    motorIg(m) = Ig_solidCylinder(m, propellantDiameter, propellantDiameter)
+    massData = StructArray([massElement(staticBodyCOM, staticBodyMass, staticBodyMass, mainBodyIg(staticBodyMass), mainBodyIg), massElement(propellantCOM, propellantInitialMass, propellantInitialMass, motorIg(propellantInitialMass), motorIg)])
+
+    #aero properties (fixed)
+    dataSet = aeroCharacterization(AoA, Mach, Cd, Cl, COP, A)
+    
+    #state derivative function specific to this rocket + conditions
+    dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
+
+    
     z0 = [r0;v0;q0;w0]
     z = rk4(dz, tspan, z0) #solve
 
