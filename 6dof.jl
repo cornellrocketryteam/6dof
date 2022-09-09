@@ -513,13 +513,14 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
 end
 
 #state derivative function
-function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64})
+function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64}, launchLatLong::Vector{Float64})
     #t: time
     #z: state
     #aeroData: data describing aero features
     #massData: !modifies! array of mass elements
     #motorData: data describing motor thrust
     #returns: derivative of each element of the state
+
 
     updateMassState!(t, massData, motorData) #updates massData given the current time and motor information
 
@@ -538,8 +539,11 @@ function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacte
     thrust_I = rotateFrame(thrust_B, quatInv(z[7:10]))
     #Gravity
     grav_I = aGrav(z[1:3])
+    #Corriolis
+    corr_I = aCorriolis(z, launchLatLong)
+
     
-    a_I = (thrust_I + totalAero_I)/m + grav_I
+    a_I = (thrust_I + totalAero_I)/m + grav_I + corr_I
 
     #handling rocket sitting on pad
     if(t < 1.0 && a_I[3] < 0)
@@ -616,6 +620,16 @@ function aGrav(rRO_I::Vector{Float64})
     return -G * Me / norm(rRC_I)^3 *rRC_I
     return 
 
+end
+
+#corriolis acceleation function
+function aCorriolis(z::Vector{Float64}, launchLatLong::Vector{Float64})
+    #z: state vector
+    #returns: Ficticious corriolis acceleration due to roatation 
+
+    we = 7.2921150e-5 #fixed rotation rate of earth
+
+    return [-2 * we * z[6] * cos(launchLatLong[1]),0,0]
 end
 
 #apply quat
@@ -1032,19 +1046,25 @@ let
     COP::Matrix{Float64} = [-2.8 -2.8; -2.9 -2.9]
     A::Vector{Float64} = [.02284, .55]
 
-    #test IC + time
-    tspan = collect(LinRange(0.0, 25, 2000))
+    latLong = [42.6927, -77.1894]
+
+    t0 = 0.0
+    tf = 25.0
+    numPoints = 2000
     r0 = [0.0,0.0, 1400.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
-    θ =  pi/24   #~5deg = .07
-    q0 = [sin(θ/2)*n; cos(θ/2)]
+    θ =  5   #deg
     w0 = zeros(3)
 
+    ## things to do after import
+
+    θ = θ * pi/180
+    q0 = [sin(θ/2)*n; cos(θ/2)]
+    latLong = latLong * pi/180
+    tspan = collect(LinRange(t0, tf, numPoints))
     #motor info
     motorData = readMotorData(thrustCurveFileName) #s, N
-    # initalPropMass = 6.363 #kg
-
     #read in flight data to compare to 
     flightData = readRRC3Data(flightDataFilePath)
 
@@ -1055,9 +1075,11 @@ let
 
     #aero properties (fixed)
     dataSet = aeroCharacterization(AoA, Mach, Cd, Cl, COP, A)
+
+    bigRed1 = rocket(dataSet, massData, motorData)
     
     #state derivative function specific to this rocket + conditions
-    dz(t, zi) = stateDerivative!(t, zi, dataSet, massData, motorData)
+    dz(t, zi) = stateDerivative!(t, zi, bigRed1.aeroData, bigRed1.massData, bigRed1.motorData, latLong)
 
     
     z0 = [r0;v0;q0;w0]
