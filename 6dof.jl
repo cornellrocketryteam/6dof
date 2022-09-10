@@ -380,7 +380,7 @@ function expAtm(h::Float64)
 end
 
 ##atmosphereic density as a function of position 
-function expAtm_r(rRO_I)
+function expAtm_r(rRO_I::Vector{Float64})
 
     rOC_I = [0.0;0.0;Re]
     rRC_I = rOC_I + rRO_I;
@@ -650,11 +650,10 @@ function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacte
     thrust_I = rotateFrame(thrust_B, quatInv(z[7:10]))
     #Gravity
     grav_I = aGrav(z[1:3])
-    #Corriolis
-    corr_I = aCorriolis(z, launchLatLong)
-
+    #Ficticious
+    Fict_I = aCorriolis(z, launchLatLong) + aCentrifugal(z, launchLatLong)
     
-    a_I = (thrust_I + totalAero_I)/m + grav_I + corr_I
+    a_I = (thrust_I + totalAero_I)/m + grav_I + Fict_I
 
     #handling rocket sitting on pad
     if(t < 1.0 && a_I[3] < 0)
@@ -739,40 +738,19 @@ function aCorriolis(z::Vector{Float64}, launchLatLong::Vector{Float64})
     return [-2 * we * z[6] * cos(launchLatLong[1]),0,0]
 end
 
-#apply quat
-# function rotateFrame(v::Vector{Float64}, q::Vector{Float64})
+function aCentrifugal(z::Vector{Float64}, launchLatLong::Vector{Float64})
+    #z: state vector
+    #launchLatLong: vector representing latitude and longitiude of launch site.
 
-#     #v: vector in initial frame
-#     #q: [q1, q2, q3, q] quaternion in vector form with imaginary part as the first 3 elements and real part as the last element
-#     #returns v in new rotated frame coordinates
+    #assume crossrange travel is negligible compared to vertical travel.
+    #can probably just make this a constant offset to not waste time calculating it for only order 1e-6 differences. If need more speed make this a constant.
 
-#     quatVec = [v; 0]
-#     return quatProd(quatInv(q), quatProd(quatVec, q))[1:3]
+    direction = [0, -sin(launchLatLong[1]), cos(launchLatLong[1])]
+    magnitude = we^2 * (Re + z[3])
 
-# end
+    return magnitude * direction
 
-# #quaternion product
-# function quatProd(q1::Vector{Float64}, q2::Vector{Float64})
-
-#     #q1: quaternion [q1,q2,q3,q]
-#     #q2: quaternion [q1,q2,q3,q]
-#     #returns: quaternion product q1*q2
-
-#     vec = q1[4] * q2[1:3] + q2[4] * q1[1:3] + cross(q1[1:3], q2[1:3])
-#     real = q1[4] * q2[4] - dot(q1[1:3], q2[1:3])
-
-#     return [vec; real]
-
-# end
-
-# #quaternon inverse
-# function quatInv(q::Vector{Float64})
-#     #q: quaternion
-#     #returns: inverse of q
-
-#     return [-q[1:3]; q[4]]
-
-# end
+end
 
 #add Row to 2D Matrix
 function addRow(matrix, index)
