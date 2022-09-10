@@ -1133,7 +1133,7 @@ end
 #code body
 let
     
-    tspan, z = run("simParam.JSON")
+    tspan, z = @timev run("simParam.JSON")
 
     # ##  ##  ##  ##  ##
 
