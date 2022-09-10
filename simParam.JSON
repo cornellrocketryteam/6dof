@@ -1,16 +1,4 @@
 {
-    "testingDouble": 5.0,
-    "farts": 2.90,
-    "matrix": [
-        [
-            1,
-            2
-        ],
-        [
-            1,
-            3
-        ]
-    ],
     "thrustCurveFileName": "Cesaroni_13628N5600-P.eng",
     "flightDataFilePath": "SP22CompData.csv",
     "mainBodyLength": 3.6,

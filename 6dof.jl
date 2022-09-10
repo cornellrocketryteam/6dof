@@ -15,13 +15,16 @@
 #system time 
 #t: t = 0 at motor ignition
 
+######### conventions #################
+#point R is defined at tip of nose cone. All positions relative to rocket are relative to the nosecone. 
+#########parameter definitions###########
+
 using LinearAlgebra
 using Interpolations
 using StructArrays
 using PyPlot
 using Optim
 using JSON
-
 
 ########structs################
 
@@ -91,6 +94,17 @@ struct sim
 
 end
 
+#########Constants###############################
+
+const interpTol = 1e-10
+const mpf = 0.3048 #meters per foot conversion
+const p0 = 1.225 #ρ0 
+const expAtmH = 7.249 #H in exp atm fnc
+const Re = 6.3781e6
+const G = 6.67430e-11 #gravidational constant(kg,m,s)
+const Me = 5.97219e24 #mass of the earth (kg)
+const we = 7.2921150e-5 #fixed rotation rate of earth
+
 #########functions (majority of project)#########
 
 #mutating function that adds data to aeroCharacterization data set
@@ -99,7 +113,7 @@ function addData!(previous::aeroCharacterization, dataPoint::aeroDataPoint)
     #previous: !modifies! aeroDataCharacterization to describe a body
     #dataPoint: aeroDatapoint to add to the aeroDataCharacterization
 
-    tol = 1e-10
+    tol = interpTol
     aoaIndex = getIndexWithTol(previous.AoA, dataPoint.AoA, tol)
     machIndex = getIndexWithTol(previous.Mach, dataPoint.Mach, tol)
 
@@ -146,6 +160,8 @@ function vovToM(v::Vector)
 end
 
 function readJSONParam(paramFilePath::String)
+    #takes in file path the JSON data
+    #return: sim struct with all data for rocket description and sim inputs
 
 
     io = open(paramFilePath, "r")
@@ -304,8 +320,6 @@ end
 
 function readRRC3Data(flightDataFilePath::String)
 
-    mpf = 0.3048 #meters per foot conversion
-
     flightData = [0,0,0]'
 
     file = open(flightDataFilePath, "r")
@@ -358,16 +372,16 @@ function expAtm(h::Float64)
     #h: height above sea level (m)
     #returns ρ: density of atmosphere at that height (kg/m^3)
 
-    ρ(ρ0, h, h0, H) = ρ0 * exp((h0-(h/1000))/H)
+    p(p0, h, h0, H) = p0 * exp((h0-(h/1000))/H)
 
-    return ρ(1.225, h, 0, 7.249) #Currently written for values of h between 0-25km add lookup table for more
+    return p(p0, h, 0, expAtmH) #Currently written for values of h between 0-25km add lookup table for more
 
 end
 
 ##atmosphereic density as a function of position 
 function expAtm_r(rRO_I)
 
-    rOC_I = [0.0;0.0; 6.3781e6]
+    rOC_I = [0.0;0.0;Re]
     rRC_I = rOC_I + rRO_I;
     h = norm(rRC_I) - norm(rOC_I)
 
@@ -707,9 +721,7 @@ function aGrav(rRO_I::Vector{Float64})
     #return: acceleration due to gravity (vector)
 
     #assumes sphereical earth. Adds height to mean radius of the earth 
-    G = 6.67430e-11 #gravidational constant(kg,m,s)
-    Me = 5.97219e24 #mass of the earth (kg)
-    rOC_I = [0.0;0.0; 6.3781e6] #radius of the earth (m)
+    rOC_I = [0.0;0.0; Re] #radius of the earth (m)
 
     rRC_I = rOC_I + rRO_I;
 
@@ -722,9 +734,7 @@ end
 function aCorriolis(z::Vector{Float64}, launchLatLong::Vector{Float64})
     #z: state vector
     #returns: Ficticious corriolis acceleration due to roatation 
-
-    we = 7.2921150e-5 #fixed rotation rate of earth
-
+    
     return [-2 * we * z[6] * cos(launchLatLong[1]),0,0]
 end
 
@@ -1090,7 +1100,7 @@ function run(z0, tspan, aeroData, massData, motorData, latLong)
 
     dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData, latLong)
 
-    return rk4(dz, tspan, z0)
+    return tspan, rk4(dz, tspan, z0)
 
 end
 
@@ -1122,73 +1132,8 @@ end
 
 #code body
 let
-
-    ######### conventions #################
-    #point R is defined at tip of nose cone. All positions relative to rocket are relative to the nosecone. 
-    #########parameter definitions###########
-
-    ##Generic Set up##
-
-    #hard coded sim parameters --> soon to be moved to JSON
-    thrustCurveFileName = "Cesaroni_13628N5600-P.eng"
-    flightDataFilePath = "SP22CompData.csv"
-
-    mainBodyLength::Float64 = 3.6
-    mainBodyDiameter::Float64 = .075
-    staticBodyCOM::Vector{Float64} = [0,0,-2.2]
-    staticBodyMass::Float64 = 41.036
-
-    propellantLength::Float64 = 1.0
-    propellantDiameter::Float64 = .05
-    propellantInitialMass::Float64 = 6.363
-    propellantCOM::Vector{Float64} = [0,0,-3.48]
-
-    AoA::Vector{Float64} = [0.0, pi/2]
-    Mach::Vector{Float64} = [0.0, 2.0]
-    Cd::Matrix{Float64} = ones(2,2) * .4
-    Cl::Matrix{Float64} = [0.0 0.0; 1.0 1.0]
-    COP::Matrix{Float64} = [-2.8 -2.8; -2.9 -2.9]
-    A::Vector{Float64} = [.02284, .55]
-
-    latLong = [42.6927, -77.1894]
-
-    t0 = 0.0
-    tf = 25.0
-    numPoints = 2000
-    r0 = [0.0,0.0, 1400.0]
-    v0 = [0.0,0.0,0.0]
-    n = [0;1;0]
-    theta =  5   #deg
-    w0 = zeros(3)
-
-    ## things to do after import
-
-    theta = theta * pi/180
-    latLong = latLong * pi/180
-    q0 = [sin(theta/2)*n; cos(theta/2)]
-    tspan = collect(LinRange(t0, tf, numPoints))
-    #motor info
-    motorData = readMotorData(thrustCurveFileName) #s, N
-    #read in flight data to compare to 
-    flightData = readRRC3Data(flightDataFilePath)
-
-    #dynamic mass properties
-    mainBodyIg(m) = Ig_solidCylinder(m, mainBodyLength, mainBodyDiameter)
-    motorIg(m) = Ig_solidCylinder(m, propellantDiameter, propellantDiameter)
-    massData = StructArray([massElement(staticBodyCOM, staticBodyMass, staticBodyMass, mainBodyIg(staticBodyMass), mainBodyIg), massElement(propellantCOM, propellantInitialMass, propellantInitialMass, motorIg(propellantInitialMass), motorIg)])
-
-    #aero properties (fixed)
-    dataSet = aeroCharacterization(AoA, Mach, Cd, Cl, COP, A)
-
-    bigRed1 = rocket(dataSet, massData, motorData)
     
-    #state derivative function specific to this rocket + conditions
-    dz(t, zi) = stateDerivative!(t, zi, bigRed1.aeroData, bigRed1.massData, bigRed1.motorData, latLong)
-
-    
-    # z0 = [r0;v0;q0;w0]
-    # z = rk4(dz, tspan, z0) #solve
-    z = run("simParam.JSON")
+    tspan, z = run("simParam.JSON")
 
     # ##  ##  ##  ##  ##
 
@@ -1196,8 +1141,7 @@ let
 
     getQuiverPlot_py(z, 1)
 
-   
-
+    ############ Past Testing ##########
 
     #testing JSON read in
     # io = open("simParam.JSON", "r")
@@ -1207,14 +1151,66 @@ let
     # testing = get(j, "matrix", NaN)
 
     # readout = vovToM(testing)
+
+    # #hard coded sim parameters --> soon to be moved to JSON
+    # thrustCurveFileName = "Cesaroni_13628N5600-P.eng"
+    # flightDataFilePath = "SP22CompData.csv"
+
+    # mainBodyLength::Float64 = 3.6
+    # mainBodyDiameter::Float64 = .075
+    # staticBodyCOM::Vector{Float64} = [0,0,-2.2]
+    # staticBodyMass::Float64 = 41.036
+
+    # propellantLength::Float64 = 1.0
+    # propellantDiameter::Float64 = .05
+    # propellantInitialMass::Float64 = 6.363
+    # propellantCOM::Vector{Float64} = [0,0,-3.48]
+
+    # AoA::Vector{Float64} = [0.0, pi/2]
+    # Mach::Vector{Float64} = [0.0, 2.0]
+    # Cd::Matrix{Float64} = ones(2,2) * .4
+    # Cl::Matrix{Float64} = [0.0 0.0; 1.0 1.0]
+    # COP::Matrix{Float64} = [-2.8 -2.8; -2.9 -2.9]
+    # A::Vector{Float64} = [.02284, .55]
+
+    # latLong = [42.6927, -77.1894]
+
+    # t0 = 0.0
+    # tf = 25.0
+    # numPoints = 2000
+    # r0 = [0.0,0.0, 1400.0]
+    # v0 = [0.0,0.0,0.0]
+    # n = [0;1;0]
+    # theta =  5   #deg
+    # w0 = zeros(3)
+
+    # ## things to do after import
+
+    # theta = theta * pi/180
+    # latLong = latLong * pi/180
+    # q0 = [sin(theta/2)*n; cos(theta/2)]
+    # tspan = collect(LinRange(t0, tf, numPoints))
+    # #motor info
+    # motorData = readMotorData(thrustCurveFileName) #s, N
+    # #read in flight data to compare to 
+    # flightData = readRRC3Data(flightDataFilePath)
+
+    # #dynamic mass properties
+    # mainBodyIg(m) = Ig_solidCylinder(m, mainBodyLength, mainBodyDiameter)
+    # motorIg(m) = Ig_solidCylinder(m, propellantDiameter, propellantDiameter)
+    # massData = StructArray([massElement(staticBodyCOM, staticBodyMass, staticBodyMass, mainBodyIg(staticBodyMass), mainBodyIg), massElement(propellantCOM, propellantInitialMass, propellantInitialMass, motorIg(propellantInitialMass), motorIg)])
+
+    # #aero properties (fixed)
+    # dataSet = aeroCharacterization(AoA, Mach, Cd, Cl, COP, A)
+
+    # bigRed1 = rocket(dataSet, massData, motorData)
     
+    # #state derivative function specific to this rocket + conditions
+    # dz(t, zi) = stateDerivative!(t, zi, bigRed1.aeroData, bigRed1.massData, bigRed1.motorData, latLong)
+
     
-    
-
-
-
-
-    ############ Past Testing ##########
+    # z0 = [r0;v0;q0;w0]
+    # z = rk4(dz, tspan, z0) #solve
 
     # for (i,v) in enumerate(testing)
     #     for (j,element) in enumerate(v)
