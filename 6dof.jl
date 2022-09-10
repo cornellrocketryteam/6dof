@@ -20,6 +20,7 @@ using Interpolations
 using StructArrays
 using PyPlot
 using Optim
+using JSON
 
 
 ########structs################
@@ -74,6 +75,22 @@ struct rocket
 
 end
 
+struct simInputs
+
+    tspan::Vector{Float64}
+    z0::Vector{Float64}
+
+    latLong::Vector{Float64}
+
+end
+
+struct sim
+
+    rocket::rocket
+    simInputs::simInputs
+
+end
+
 #########functions (majority of project)#########
 
 #mutating function that adds data to aeroCharacterization data set
@@ -109,6 +126,85 @@ function addData!(previous::aeroCharacterization, dataPoint::aeroDataPoint)
     previous.Cl[aoaIndex,machIndex] = dataPoint.Cl
     previous.COP[aoaIndex,machIndex] = dataPoint.COP
     previous.A[aoaIndex] = dataPoint.A
+
+end
+
+function vovToM(v::Vector)
+    #v: vector of vectors to turn into matrix. Each element of main vector is row of matrix
+    #returns: desired matrix
+
+    matrix = zeros(size(v)[1], size(v[1])[1])
+
+    for (i, vec) in enumerate(v)
+        for (j, element) in enumerate(vec)
+            matrix[i,j] = element
+        end
+    end
+
+    return matrix
+
+end
+
+function readJSONParam(paramFilePath::String)
+
+
+    io = open(paramFilePath, "r")
+    s = read(io, String)
+    j = JSON.parse(s)
+
+
+    thrustCurveFileName::String = get(j, "thrustCurveFileName", NaN)
+
+    mainBodyLength::Float64 = get(j,  "mainBodyLength" ,NaN)
+    mainBodyDiameter::Float64 = get(j,  "mainBodyDiameter" ,NaN)
+    staticBodyCOM::Vector{Float64} = get(j,  "staticBodyCOM" ,NaN)
+    staticBodyMass::Float64 = get(j,  "statBodyMass" ,NaN)
+
+    propellantLength::Float64 = get(j,  "propellantLength" ,NaN)
+    propellantDiameter::Float64 = get(j,  "propellantDiameter" ,NaN)
+    propellantInitialMass::Float64 = get(j,  "propellantInitialMass" ,NaN)
+    propellantCOM::Vector{Float64} = get(j,  "propellantCOM" ,NaN)
+
+    AoA::Vector{Float64} = get(j,  "AoA" ,NaN)
+    Mach::Vector{Float64} = get(j,  "Mach" ,NaN)
+    Cd::Matrix{Float64} = vovToM(get(j,  "Cd" ,NaN))
+    Cl::Matrix{Float64} = vovToM(get(j,  "Cl" ,NaN))
+    COP::Matrix{Float64} = vovToM(get(j,  "COP" ,NaN))
+    A::Vector{Float64} = get(j,  "A" ,NaN)
+
+    latLong = get(j,  "latLong" ,NaN)
+    latLong = latLong * pi/180
+
+    t0 = get(j,  "t0" ,NaN)
+    tf = get(j,  "tf" ,NaN)
+    numPoints = get(j,  "numPoints" ,NaN)
+    r0 = get(j,  "r0" ,NaN)
+    v0 = get(j,  "v0" ,NaN)
+    n = get(j,  "n" ,NaN)
+    theta = get(j,  "theta" ,NaN)
+    w0 = get(j,  "w0" ,NaN)
+    
+
+    theta = theta * pi/180
+    latLong = latLong * pi/180
+    q0 = [sin(theta/2)*n; cos(theta/2)]
+    tspan = collect(LinRange(t0, tf, numPoints))
+    z0 = [r0; v0; q0; w0]
+    #motor info
+    motorData = readMotorData(thrustCurveFileName) #s, N
+
+    #dynamic mass properties
+    mainBodyIg(m) = Ig_solidCylinder(m, mainBodyLength, mainBodyDiameter)
+    motorIg(m) = Ig_solidCylinder(m, propellantLength, propellantDiameter)
+    massData = StructArray([massElement(staticBodyCOM, staticBodyMass, staticBodyMass, mainBodyIg(staticBodyMass), mainBodyIg), massElement(propellantCOM, propellantInitialMass, propellantInitialMass, motorIg(propellantInitialMass), motorIg)])
+
+    #aero properties (fixed)
+    dataSet = aeroCharacterization(AoA, Mach, Cd, Cl, COP, A)
+
+    bigRed = rocket(dataSet, massData, motorData)
+    simInit = simInputs(tspan, z0, latLong)
+
+    return sim(bigRed, simInit)
 
 end
 
@@ -978,7 +1074,7 @@ function run_plotz3(z0, tspan, aeroData, massData, motorData, flightData)
 
 end
 
-function run_plotz3(z0, tspan, aeroData, massData, motorData)
+function run_pJlotz3(z0, tspan, aeroData, massData, motorData)
     #runs simulation and plots height as a function of time
 
     dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData)
@@ -989,12 +1085,20 @@ function run_plotz3(z0, tspan, aeroData, massData, motorData)
 
 end
 
-function run(z0, tspan, aeroData, massData, motorData)
+function run(z0, tspan, aeroData, massData, motorData, latLong)
     #runs simulation and plots height as a function of time
 
-    dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData)
+    dz(t, zi) = stateDerivative!(t, zi, aeroData, massData, motorData, latLong)
 
     return rk4(dz, tspan, z0)
+
+end
+
+function run(parameterPath::String)
+
+    simParam = readJSONParam(parameterPath)
+
+    return run(simParam.simInputs.z0, simParam.simInputs.tspan, simParam.rocket.aeroData, simParam.rocket.massData, simParam.rocket.motorData, simParam.simInputs.latLong)
 
 end
 
@@ -1054,14 +1158,14 @@ let
     r0 = [0.0,0.0, 1400.0]
     v0 = [0.0,0.0,0.0]
     n = [0;1;0]
-    θ =  5   #deg
+    theta =  5   #deg
     w0 = zeros(3)
 
     ## things to do after import
 
-    θ = θ * pi/180
-    q0 = [sin(θ/2)*n; cos(θ/2)]
+    theta = theta * pi/180
     latLong = latLong * pi/180
+    q0 = [sin(theta/2)*n; cos(theta/2)]
     tspan = collect(LinRange(t0, tf, numPoints))
     #motor info
     motorData = readMotorData(thrustCurveFileName) #s, N
@@ -1082,17 +1186,41 @@ let
     dz(t, zi) = stateDerivative!(t, zi, bigRed1.aeroData, bigRed1.massData, bigRed1.motorData, latLong)
 
     
-    z0 = [r0;v0;q0;w0]
-    z = rk4(dz, tspan, z0) #solve
+    # z0 = [r0;v0;q0;w0]
+    # z = rk4(dz, tspan, z0) #solve
+    z = run("simParam.JSON")
 
-    ##  ##  ##  ##  ##
+    # ##  ##  ##  ##  ##
 
     getAoAPlot_py(tspan, z)
 
     getQuiverPlot_py(z, 1)
 
+   
+
+
+    #testing JSON read in
+    # io = open("simParam.JSON", "r")
+    # s = read(io, String)
+    # j = JSON.parse(s)
+    # farts = get(j, "farts", NaN)
+    # testing = get(j, "matrix", NaN)
+
+    # readout = vovToM(testing)
+    
+    
+    
+
+
+
 
     ############ Past Testing ##########
+
+    # for (i,v) in enumerate(testing)
+    #     for (j,element) in enumerate(v)
+    #         readout[i,j] = element
+    #     end
+    # end
 
     #machArray = [0.0, 0.3, 0.6, 0.9]
 
@@ -1144,8 +1272,8 @@ let
    
     #test state
     # n = [0;1;0]
-    # θ = pi/24 #7.5deg
-    # q = [sin(θ/2)*n; cos(θ/2)]
+    # theta = pi/24 #7.5deg
+    # q = [sin(theta/2)*n; cos(theta/2)]
     # ri = [1.0;1.0;100.0]
     # vi = [10.0;0.0;100.0]
     # wi = [.05;0;0]
@@ -1159,8 +1287,8 @@ let
 
     #testing rotate frame function
     # n = [1;0;0]
-    # θ = pi/6
-    # q = [sin(θ/2)*n; cos(θ/2)]
+    # theta = pi/6
+    # q = [sin(theta/2)*n; cos(theta/2)]
     # x3 = [0;0;1]
     # println(rotateFrame(x3,q))
 
@@ -1203,8 +1331,8 @@ let
     # println(dataSet.Cd)
 
     # n = [1;0;0]
-    # θ = .05
-    # q = [sin(θ/2)*n; cos(θ/2)]
+    # theta = .05
+    # q = [sin(theta/2)*n; cos(theta/2)]
 
     # vROI_I = [0.0;0.0; 100.0]
     # vAOI_I = [0.0;5.0;0.0]

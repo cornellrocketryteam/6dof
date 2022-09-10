@@ -1,0 +1,102 @@
+{
+    "testingDouble": 5.0,
+    "farts": 2.90,
+    "matrix": [
+        [
+            1,
+            2
+        ],
+        [
+            1,
+            3
+        ]
+    ],
+    "thrustCurveFileName": "Cesaroni_13628N5600-P.eng",
+    "flightDataFilePath": "SP22CompData.csv",
+    "mainBodyLength": 3.6,
+    "mainBodyDiameter": 0.075,
+    "staticBodyCOM": [
+        0,
+        0,
+        -2.2
+    ],
+    "statBodyMass": 41.036,
+    "propellantLength": 1.0,
+    "propellantDiameter": 0.05,
+    "propellantInitialMass": 6.363,
+    "propellantCOM": [
+        0,
+        0,
+        -3.48
+    ],
+    "AoA": [
+        0.0,
+        1.570796326794897
+    ],
+    "Mach": [
+        0.0,
+        2.0
+    ],
+    "Cd": [
+        [
+            0.4,
+            0.4
+        ],
+        [
+            0.4,
+            0.4
+        ]
+    ],
+    "Cl": [
+        [
+            0.0,
+            0.0
+        ],
+        [
+            0.1,
+            0.1
+        ]
+    ],
+    "COP": [
+        [
+            -2.8,
+            -2.8
+        ],
+        [
+            -2.9,
+            -2.9
+        ]
+    ],
+    "A": [
+        0.02284,
+        0.55
+    ],
+    "latLong": [
+        42.6927,
+        -77.1894
+    ],
+    "t0": 0.0,
+    "tf": 25.0,
+    "numPoints": 2000,
+    "r0": [
+        0.0,
+        0.0,
+        1400.0
+    ],
+    "v0": [
+        0.0,
+        0.0,
+        0.0
+    ],
+    "n": [
+        0,
+        1,
+        0
+    ],
+    "theta": 5,
+    "w0": [
+        0.0,
+        0.0,
+        0.0
+    ]
+}
