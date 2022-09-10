@@ -101,10 +101,10 @@ const interpTol = 1e-10
 const mpf = 0.3048 #meters per foot conversion
 const p0 = 1.225 #ρ0 
 const expAtmH = 7.249 #H in exp atm fnc
-const Re = 6.3781e6
+const Re = 6.3781e6 #radius of earth (m)
 const G = 6.67430e-11 #gravidational constant(kg,m,s)
 const Me = 5.97219e24 #mass of the earth (kg)
-const we = 7.2921150e-5 #fixed rotation rate of earth
+const we = 7.2921150e-5 #fixed rotation rate of earth (rad/s)
 
 #########functions (majority of project)#########
 
@@ -469,7 +469,7 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
 end
 
 #mach number
-function calcMach(vRAI_I, h)
+function calcMach(vRAI_I::Vector{Float64}, h::Float64)
     #vRAI_I: velocity of body wrt to air
     #returns: mach number 
     return norm(vRAI_I)/getLocalSoS(h)
@@ -753,7 +753,7 @@ function aCentrifugal(z::Vector{Float64}, launchLatLong::Vector{Float64})
 end
 
 #add Row to 2D Matrix
-function addRow(matrix, index)
+function addRow(matrix::Matrix, index::Int)
 
     #matrix: 2D matrix to have row added to
     #index: index of new row
@@ -764,7 +764,7 @@ function addRow(matrix, index)
 end
 
 #add Col to 2D Matrix
-function addCol(matrix, index)
+function addCol(matrix::Matrix, index::Int)
 
     #matrix: 2D matrix to have coulumns added to
     #index: position of new column of zeros
@@ -774,7 +774,7 @@ function addCol(matrix, index)
 
 end
 
-function changeTimeData(z, tspan0::Vector{Float64}, dtf::Float64)
+function changeTimeData(z::Vector{Float64}, tspan0::Vector{Float64}, dtf::Float64)
     #z: state vector
     #tspan0: original time vector (aligns with z)
     #dtf: desired final timeStep
