@@ -22,7 +22,7 @@ function quatProd(q1::Vector{Float64}, q2::Vector{Float64})
     real = q1[4] * q2[4] - dot(q1[1:3], q2[1:3])
 
     return [vec; real]
-
+    
 end
 
 #quaternon inverse
