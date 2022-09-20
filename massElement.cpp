@@ -1,5 +1,4 @@
 #include <Eigen/Geometry>
-#include "motor.cpp"
 
 class massElement{
 
@@ -12,6 +11,11 @@ class massElement{
         massElement(Eigen::Vector3d pos, double m){
             rGR_B = pos;
             mass = m;
+        }
+
+        massElement(){
+            rGR_B = Eigen::Vector3d (0.0,0.0,0.0);
+            mass = 0;
         }
 
         //gets

@@ -70,6 +70,13 @@
         "algorithm": "cpp",
         "functional": "cpp",
         "iterator": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "*.tcc": "cpp",
+        "memory_resource": "cpp",
+        "numeric": "cpp",
+        "random": "cpp",
+        "ranges": "cpp",
+        "stop_token": "cpp",
+        "cinttypes": "cpp"
     }
 }

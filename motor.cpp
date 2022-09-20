@@ -3,7 +3,9 @@
 #include<Eigen/Dense>
 
 
+
 class motor{
+
     private:
         std::vector<double> thrusts;
         std::vector<double> times;
@@ -22,7 +24,12 @@ class motor{
             rPR_B = r;
         }
 
-        motor() = default;
+        motor(){
+            thrusts = std::vector<double>();
+            times = std::vector<double>();
+            initPropMass = 0;
+            rPR_B = Eigen::Vector3d (0,0,0);
+        }
 
         //function to calculate mass of propellant at any given time
         double calcMass(double time){
@@ -71,6 +78,11 @@ class motor{
             return initPropMass;
         }
 
+        Eigen::Vector3d getPos()
+        {
+            return rPR_B;
+        }
+
 };
 
 
@@ -95,11 +107,11 @@ int main(){
     std::vector<double> thrusts (std::begin(tempArray), std::end(tempArray));
     double tempArray1[] = {0.019, .5, 1.0, 1.5, 2.0, 2.5};
     std::vector<double> times (std::begin(tempArray1), std::end(tempArray1));
+    Eigen::Vector3d r; r << 0,0,-3.0;
 
-    motor testMotor = motor(thrusts, times, 6.373);
+    motor testMotor = motor(thrusts, times, 6.373, r);
 
     std::cout << testMotor.calcThrust(1.365394852) << std::endl;
-
     std::cout << testMotor.calcThrust(10.0) << std::endl;
     std::cout << testMotor.calcMass(1.2) << std::endl;
     std::cout << testMotor.calcMass(10.0) << std::endl;
