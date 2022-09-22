@@ -20,6 +20,18 @@ class rocket{
  
     public:
 
+        rocket(){
+            staticTotalMass = 0;
+            totalMass = 0;
+            staticIg = Eigen::Matrix3d::Zero();
+            Ig = Eigen::Matrix3d::Zero();
+            static_rGR_B = Eigen::Vector3d::Zero();
+            rGR_B = Eigen::Vector3d::Zero();
+            motorData = motor();
+            burnout = false;
+            aeroData = aeroChar_or();
+        }
+
         //constructors
         rocket(std::vector<massElement> staticMasses, motor m){
             burnout = false;
