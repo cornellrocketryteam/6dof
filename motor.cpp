@@ -17,8 +17,6 @@ class motor{
         Eigen::Matrix3d propIg;
         Eigen::Vector3d rPR_B;
         double R, L;
-        
-
 
     public:
 

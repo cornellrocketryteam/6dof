@@ -2,6 +2,7 @@
 #include "motor.cpp"
 #include <Eigen/Geometry>
 #include <vector>
+#include "aeroChar_or.cpp"
 
 class rocket{
 
@@ -14,6 +15,8 @@ class rocket{
         Eigen::Vector3d rGR_B;
         motor motorData;
         bool burnout;
+        aeroChar_or aeroData;
+
  
     public:
 
@@ -75,6 +78,15 @@ class rocket{
         double getMass(){
             return totalMass;
         }
+
+        Eigen::Vector3d getAeroForce(double t, double z[13]){
+            return aeroData.getTotalForce(t, z);
+        }
+
+        Eigen::Vector3d getCOP(double t, double z[13]){
+            return aeroData.getCOP(t, z);
+        }
+
 
 
 
