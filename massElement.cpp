@@ -50,17 +50,3 @@ Eigen::Matrix3d parallelAxis(Eigen::Matrix3d Ig, double m, Eigen::Vector3d rQG){
     return Ig + m * (Eigen::Matrix3d::Identity() * rQG.dot(rQG) - rQG * rQG.transpose());
 }
 
-// int main(){
-
-//     TESTING
-//     Eigen::Matrix3d Iog;
-//     Iog << 1,0,0, 
-//            0,1,0, 
-//            0,0,1;
-//     double m = 3;
-//     Eigen::Vector3d rQG (0,1,0);
-
-//     std::cout << parallelAxis(Iog, m, rQG);
-
-    
-// }

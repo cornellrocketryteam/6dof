@@ -108,33 +108,3 @@ class rocket{
 
 };
 
-
-
-// int main(){
-
-//     double tempArray[] = {6750.0, 5000.0, 4500.0, 3500.0, 2700.0, 0.0};
-//     std::vector<double> thrusts (std::begin(tempArray), std::end(tempArray));
-//     double tempArray1[] = {0.019, .5, 1.0, 1.5, 2.0, 2.5};
-//     std::vector<double> times (std::begin(tempArray1), std::end(tempArray1));
-//     Eigen::Vector3d propPos (0,0,-3.8);
-
-//     motor testMotor = motor(thrusts, times, 6.373, propPos, 1.0, .1);
-
-//     double mass = 41.0;
-//     Eigen::Matrix3d staticIG;
-//     Eigen::Vector3d staticPos (0,0,-2.8);
-//     staticIG << mass * Eigen::Matrix3d::Identity();
-//     massElement staticMass = massElement(staticPos, mass, staticIG);
-//     std::vector<massElement> masses (1, staticMass);
-
-//     rocket testRocket = rocket(masses, testMotor);
-
-//     std::cout<<testRocket.getCOM()<<std::endl;
-//     std::cout<<testRocket.getMass()<<std::endl;
-//     std::cout<<std::endl;
-//     testRocket.updateMassState(1.5);
-//     std::cout<<testRocket.getCOM()<<std::endl;
-//     std::cout<<testRocket.getMass()<<std::endl;
-
-    
-// }

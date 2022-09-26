@@ -140,22 +140,3 @@ double calcMass(motor m, double time){
     }
 }
 
-
-
-// int main(){
-
-//     TESTING
-//     double tempArray[] = {6750.0, 5000.0, 4500.0, 3500.0, 2700.0, 0.0};
-//     std::vector<double> thrusts (std::begin(tempArray), std::end(tempArray));
-//     double tempArray1[] = {0.019, .5, 1.0, 1.5, 2.0, 2.5};
-//     std::vector<double> times (std::begin(tempArray1), std::end(tempArray1));
-//     Eigen::Vector3d r; r << 0,0,-3.0;
-
-//     motor testMotor = motor(thrusts, times, 6.373, r, 1.0, .1);
-
-//     std::cout << testMotor.calcThrust(1.365394852) << std::endl;
-//     std::cout << testMotor.calcThrust(10.0) << std::endl;
-//     std::cout << testMotor.calcMass(1.2) << std::endl;
-//     std::cout << testMotor.calcMass(10.0) << std::endl;
-    
-// }
