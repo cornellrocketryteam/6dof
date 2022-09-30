@@ -30,8 +30,8 @@ Eigen::Vector4d quatProd(Eigen::Vector4d q1, Eigen::Vector4d q2){
     Eigen::Vector4d vec;
     Eigen::Vector3d q1v;
     Eigen::Vector3d q2v;
-    q1v << q1.head(3);
-    q2v << q2.head(3);
+    q1v << q1.head<3>();
+    q2v << q2.head<3>();
     vec << q1[3] * q2v + q2[3] * q1v + q1v.cross(q2v), q1[3] * q2[3] - q1v.dot(q2v);
 
     return vec;
@@ -57,7 +57,7 @@ Eigen::Vector3d rotateFrame(Eigen::Vector3d v, Eigen::Vector4d q){
     Eigen::Vector4d quatVec;
     quatVec << v, 0;
 
-    return quatProd(quatInv(q), quatProd(quatVec,q)).head(3);
+    return quatProd(quatInv(q), quatProd(quatVec,q)).head<3>();
 }
 
 // int main(){
