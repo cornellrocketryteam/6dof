@@ -5,6 +5,11 @@
 
 #define STATE_SIZE 13
 #define NUM_STORE 50
+#define R_EARTH 6378100
+#define G 6.67430e-11
+#define M_EARTH 5.97219e24
+
+//set startup-with-shell off
 
 typedef Eigen::Matrix<double,STATE_SIZE,1> stateVec;
 
@@ -42,7 +47,7 @@ class sim{
         stateVec stateDerivative(double t, stateVec z){
 
             //all the meat
-            return z;
+            return -z;
 
         }
 
@@ -107,16 +112,26 @@ class sim{
 void log(std::ofstream* f, double* zlog, double* tspanlog){
 
     for(int k = 0; k < NUM_STORE; k++){
-        *f << tspanlog[k] << ", ";
+        *f << tspanlog[k] << ",";
         tspanlog[k] = 0;
         for(int l = 0; l < STATE_SIZE; l++)
         {
-            *f << zlog[(k*STATE_SIZE) + l] << ", ";
+            *f << zlog[(k*STATE_SIZE) + l] << ",";
             zlog[(k*STATE_SIZE) + l] = 0.0;
         }
         *f << std::endl;
     }
 
+}
+
+Eigen::Vector3d aGrav(Eigen::Vector3d rRO_I){
+    //rRO_I: postition of body wrt to point at sea level directly above or below (radially) launch site (m)
+    //return: acceleration due to gravity (vector)
+
+    //assumes sphereical earth. Adds height to mean radius of the earth 
+    Eigen::Vector3d rRC_I (rRO_I[1], rRO_I[2], rRO_I[3] + R_EARTH); 
+
+    return -1 * G * M_EARTH / rRC_I.norm() * rRC_I;
 }
 
 int main(){
