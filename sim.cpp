@@ -3,6 +3,7 @@
 #include <fstream>
 
 
+//constatnts to use
 #define STATE_SIZE 13
 #define NUM_STORE 50
 #define R_EARTH 6378100
@@ -13,7 +14,9 @@
 
 typedef Eigen::Matrix<double,STATE_SIZE,1> stateVec;
 
+//function declariations
 void log(std::ofstream* f, double* zlog, double* tspanlog);
+Eigen::Vector3d aGrav(Eigen::Vector3d rRO_I);
 
 class sim{
 
@@ -46,8 +49,18 @@ class sim{
 
         stateVec stateDerivative(double t, stateVec z){
 
-            //all the meat
-            return -z;
+            //compeonents of stateDerivative to build
+            Eigen::Vector3d a_I;
+            Eigen::Vector4d dqB (0,0,0,0);
+            Eigen::Vector3d dwB_B (0,0,0);
+
+            a_I << aGrav(z.head<3>());
+
+
+            //assembling components to return
+            stateVec ret;
+            ret << z.segment<3>(3), a_I, dqB, dwB_B;
+            return ret;
 
         }
 
@@ -129,9 +142,9 @@ Eigen::Vector3d aGrav(Eigen::Vector3d rRO_I){
     //return: acceleration due to gravity (vector)
 
     //assumes sphereical earth. Adds height to mean radius of the earth 
-    Eigen::Vector3d rRC_I (rRO_I[1], rRO_I[2], rRO_I[3] + R_EARTH); 
+    Eigen::Vector3d rRC_I (rRO_I[0], rRO_I[1], rRO_I[2] + R_EARTH); 
 
-    return -1 * G * M_EARTH / rRC_I.norm() * rRC_I;
+    return -1 * G * M_EARTH / pow(rRC_I.norm(),3) * rRC_I;
 }
 
 int main(){
@@ -154,7 +167,7 @@ int main(){
     rocket testRocket = rocket(masses, testMotor);
 
     stateVec z0 (STATE_SIZE);
-    z0 << 1,0,1000,0,0,0,0,0,0,1,0,0,0;
+    z0 << 0,0,1000,0,0,0,0,0,0,1,0,0,0;
 
     sim s = sim(testRocket, z0, pow(10,-3), 5000, 25, -70, "export_data.txt");
 

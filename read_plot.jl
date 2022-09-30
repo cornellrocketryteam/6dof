@@ -24,7 +24,7 @@ end
 function plotx3t(flightHistory::Matrix{Float64})
 
     pygui(true)
-    return plot(flightHistory[:,1], flightHistory[:,3])
+    return plot(flightHistory[:,1], flightHistory[:,4])
 
 end
 
@@ -76,6 +76,5 @@ let
     data = readData("export_data.txt", n, m)
 
     plotx3t(data)
-    get3DQuiverPlot_py(data)
     
 end
