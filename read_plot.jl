@@ -21,6 +21,26 @@ function readData(dataFilePath::String, n::Int, m::Int)
 
 end
 
+function readData(dataFilePath::String, m::Int)
+
+    data = Array{Float64}(undef, 0, m)
+    rowInsert = zeros(1,m)
+
+    file = open(dataFilePath, "r")
+    
+    while !eof(file)
+        line = readline(file)
+        numberString = split(line, ',')
+        for j = 1:m
+            rowInsert[1,j] = parse(Float64, numberString[j])
+        end
+        data = vcat(data,rowInsert)
+    end
+
+    return data
+
+end
+
 function plotx3t(flightHistory::Matrix{Float64})
 
     pygui(true)
@@ -71,9 +91,9 @@ end
 
 let 
 
-    n = 5000
+    n = 1000
     m = 14
-    data = readData("export_data.txt", n, m)
+    data = readData("export_data.txt", m)
 
     plotx3t(data)
     

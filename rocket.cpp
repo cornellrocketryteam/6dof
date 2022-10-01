@@ -105,6 +105,10 @@ class rocket{
             return aeroData.getCOP(t, z);
         }
 
+        double getThrust(double t){
+            return motorData.calcThrust(t);
+        }
+
 
 };
 

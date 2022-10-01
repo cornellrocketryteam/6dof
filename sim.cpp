@@ -10,7 +10,8 @@
 #define G 6.67430e-11
 #define M_EARTH 5.97219e24
 
-//set startup-with-shell off
+//set startup-with-shell off -- Command to use when debugging
+//Eigen quick reference guide: https://eigen.tuxfamily.org/dox/group__QuickRefPage.html
 
 typedef Eigen::Matrix<double,STATE_SIZE,1> stateVec;
 
@@ -55,6 +56,7 @@ class sim{
             Eigen::Vector3d dwB_B (0,0,0);
 
             a_I << aGrav(z.head<3>());
+            a_I[2] = a_I[2] + lv.getThrust(t)/lv.getMass();
 
 
             //assembling components to return
@@ -95,6 +97,8 @@ class sim{
             int j = 1; //counter for states in array
 
             for(int i = 0; i < n; i++){
+
+                lv.updateMassState(currentTime);
 
                 current = rk4Step(current, currentTime, dt);
                 currentTime += dt;
@@ -169,7 +173,7 @@ int main(){
     stateVec z0 (STATE_SIZE);
     z0 << 0,0,1000,0,0,0,0,0,0,1,0,0,0;
 
-    sim s = sim(testRocket, z0, pow(10,-3), 5000, 25, -70, "export_data.txt");
+    sim s = sim(testRocket, z0, 5.0 * pow(10,-2), 999, 25, -70, "export_data.txt");
 
     s.run();
 
