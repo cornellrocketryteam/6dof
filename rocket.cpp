@@ -14,7 +14,7 @@ class rocket{
         double staticTotalMass;
         double totalMass;
         Eigen::Matrix3d staticIg;
-        Eigen::Matrix3d Ig;
+        Eigen::Matrix3d Ig_B;
         Eigen::Vector3d static_rGR_B;
         Eigen::Vector3d rGR_B;
         motor motorData;
@@ -29,7 +29,7 @@ class rocket{
             staticTotalMass = 0;
             totalMass = 0;
             staticIg = Eigen::Matrix3d::Zero();
-            Ig = Eigen::Matrix3d::Zero();
+            Ig_B = Eigen::Matrix3d::Zero();
             static_rGR_B = Eigen::Vector3d::Zero();
             rGR_B = Eigen::Vector3d::Zero();
             motorData = motor();
@@ -64,7 +64,7 @@ class rocket{
             //set dynamic mass properties based on motorData, Assume motor is fully loaded
             totalMass = staticTotalMass + motorData.getMass();
             rGR_B = (static_rGR_B * staticTotalMass + motorData.getMass() * motorData.getPos())/totalMass;
-            Ig = parallelAxis(staticIg, staticTotalMass, rGR_B - static_rGR_B) + parallelAxis(motorData.getIg(), motorData.getMass(), rGR_B - motorData.getPos());
+            Ig_B = parallelAxis(staticIg, staticTotalMass, rGR_B - static_rGR_B) + parallelAxis(motorData.getIg(), motorData.getMass(), rGR_B - motorData.getPos());
 
         }
 
@@ -74,12 +74,12 @@ class rocket{
                 motorData.updateMass(time); //update mass characteristics of motor;
                 totalMass = staticTotalMass + motorData.getMass();
                 rGR_B = (static_rGR_B * staticTotalMass + motorData.getMass() * motorData.getPos())/totalMass;
-                Ig = parallelAxis(staticIg, staticTotalMass, rGR_B - static_rGR_B) + parallelAxis(motorData.getIg(), motorData.getMass(), rGR_B - motorData.getPos());
+                Ig_B = parallelAxis(staticIg, staticTotalMass, rGR_B - static_rGR_B) + parallelAxis(motorData.getIg(), motorData.getMass(), rGR_B - motorData.getPos());
             }
             else if (!burnout){
                 totalMass = staticTotalMass;
                 rGR_B = static_rGR_B;
-                Ig = staticIg;
+                Ig_B = staticIg;
                 burnout = true;
             }
         }
@@ -90,18 +90,28 @@ class rocket{
         }
 
         Eigen::Matrix3d getIg(){
-            return Ig;
+            return Ig_B;
         }
 
         double getMass(){
             return totalMass;
         }
 
-        Eigen::Vector3d getAeroForce(double t, double z[13]){
-            return aeroData.getTotalForce(t, z);
+        Eigen::Vector3d getAeroForce(double t, stateVec z){
+            return aeroData.getTotalForce_I(t,z);
         }
 
-        Eigen::Vector3d getCOP(double t, double z[13]){
+        Eigen::Vector3d getAeroMoment(double t, stateVec z){
+
+            // returns aeroMoment_B: aeromoments on the rocket written in the B frame
+
+            Eigen::Vector3d rPR_B = aeroData.getCOP(t,z);
+            Eigen::Vector3d fP_B = aeroData.getTotalForce_B(t,z);
+
+            return (rPR_B - rGR_B).cross(fP_B);
+        }
+
+        Eigen::Vector3d getCOP(double t, stateVec z){
             return aeroData.getCOP(t, z);
         }
 

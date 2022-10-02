@@ -55,9 +55,22 @@ class sim{
             Eigen::Vector4d dqB (0,0,0,0);
             Eigen::Vector3d dwB_B (0,0,0);
 
-            a_I << aGrav(z.head<3>());
-            a_I[2] = a_I[2] + lv.getThrust(t)/lv.getMass();
+            //aero effects
+            Eigen::Vector3d fP_I = lv.getAeroForce(t,z); //total aeroforces in the body frame
+            Eigen::Vector3d mP_B = lv.getAeroMoment(t,z);
 
+            a_I << aGrav(z.head<3>());
+            a_I[2] = a_I[2] + (lv.getThrust(t)/lv.getMass());
+            a_I = a_I + (lv.getAeroForce(t,z))/lv.getMass();
+
+            if(t < 0.1 && a_I[2] < 0){
+                a_I << 0,0,0;
+            }
+            
+            Eigen::Vector4d w_B_quat;
+            w_B_quat << z.segment<3>(10), 0;
+            dqB = 0.5 * quatProd(z.segment<4>(6), w_B_quat);
+            dwB_B = lv.getIg().householderQr().solve(mP_B - z.segment<3>(10).cross(lv.getIg() * z.segment<3>(10)));
 
             //assembling components to return
             stateVec ret;
