@@ -9,6 +9,7 @@
 #define R_EARTH 6378100
 #define G 6.67430e-11
 #define M_EARTH 5.97219e24
+#define W_EARTH 7.292115e-5
 
 //set startup-with-shell off -- Command to use when debugging
 //Eigen quick reference guide: https://eigen.tuxfamily.org/dox/group__QuickRefPage.html
@@ -18,6 +19,8 @@ typedef Eigen::Matrix<double,STATE_SIZE,1> stateVec;
 //function declariations
 void log(std::ofstream* f, double* zlog, double* tspanlog);
 Eigen::Vector3d aGrav(Eigen::Vector3d rRO_I);
+Eigen::Vector3d aCorriolis(double vROI_I_3, double lat);
+Eigen::Vector3d aCentrifugal(double lat);
 
 class sim{
 
@@ -61,7 +64,7 @@ class sim{
 
             a_I << aGrav(z.head<3>());
             a_I[2] = a_I[2] + (lv.getThrust(t)/lv.getMass());
-            a_I = a_I + (lv.getAeroForce(t,z))/lv.getMass();
+            a_I = a_I + (lv.getAeroForce(t,z))/lv.getMass() + aCorriolis(z[5], latitude) + aCentrifugal(latitude);
 
             if(t < 0.1 && a_I[2] < 0){
                 a_I << 0,0,0;
@@ -162,6 +165,16 @@ Eigen::Vector3d aGrav(Eigen::Vector3d rRO_I){
     Eigen::Vector3d rRC_I (rRO_I[0], rRO_I[1], rRO_I[2] + R_EARTH); 
 
     return -1 * G * M_EARTH / pow(rRC_I.norm(),3) * rRC_I;
+}
+Eigen::Vector3d aCorriolis(double vROI_I_3, double lat){
+    return Eigen::Vector3d(-2 * W_EARTH * vROI_I_3 * cos(lat),0,0);
+}
+
+Eigen::Vector3d aCentrifugal(double lat){
+    //lat: latitiude of launch site
+
+    //assumes displacement from surface is negligible relative to the R_EARTH
+    return Eigen::Vector3d(0, -sin(lat) * pow(W_EARTH,2) * R_EARTH, cos(lat) * pow(W_EARTH,2) * R_EARTH);
 }
 
 int main(){
