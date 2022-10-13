@@ -5,7 +5,7 @@
 
 //constatnts to use
 #define STATE_SIZE 13
-#define NUM_STORE 50
+#define NUM_STORE 100
 #define R_EARTH 6378100
 #define G 6.67430e-11
 #define M_EARTH 5.97219e24
@@ -138,8 +138,22 @@ class sim{
             file.close();
             zout = current;
         }
-        
 
+        stateVec run(stateVec z0_push, double t0_push){
+            z0 = z0_push;
+            t0 = t0_push;
+            run();
+            return zout;
+        }
+
+        //get & set functions
+        void set_dt(double dt_set){
+            dt = dt_set;
+        }
+
+        stateVec get_zout(){
+            return zout;
+        }
 };
 
 void log(std::ofstream* f, double* zlog, double* tspanlog){
