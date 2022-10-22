@@ -57,6 +57,19 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, rocket::rocket)
 
 end
 
+function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
+
+    Qwind = getWind(t, z[3])[2]
+    thrust = motorThrustMass(t, lv.motorData, lv.massData.initalMass[2])[1]
+    thrustVariation = getThrustVar(t)
+
+    Q = zeros(4,4)
+    Q[1:3,1:3] = Qwind
+    Q[4,4] = thrustVariation * thrust
+
+    return Q
+end
+
 
 function sigmaPoints(zhat::Vector{Float64}, n::Int, Wo::Float64, Pkk::Matrix{Float64})
     #zhat: state estimate
@@ -87,6 +100,13 @@ function sigmaPoints(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
 
 end
 
+function sigmaPointsWeights(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
+
+    W0 = 1.0 - n/3
+    return sigmaPoints(zhat, n, W0, Pkk), [W0, (1-W0)/(2*n)]
+
+end
+
 #sensor function
 function yhat(t::Float64, zhat::Vector{Float64}, lv::rocket)
 
@@ -99,7 +119,7 @@ function yhat(t::Float64, zhat::Vector{Float64}, dz::Vector{Float64})
     accel = dz[4:6]
     w_gyro = zhat[11:13]
     x3 = zhat[3]
-    q = z[7:10]
+    q = zhat[7:10]
 
     return [accel; w_gyro; x3; q]
 
@@ -118,22 +138,72 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 end
 
 #prediction step of unscented kalman filter
-function ukf_step(f::Function, h::Function, t::Float64, zkk::Vector{Float64}, chi::Matrix{Float64}, weights::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64)
+function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, lv::rocket)
+    #tk: systetm time at known step 
+    #zkk: system state at current time (known)
+    #Pkk: system covariance
+    #yk1: measurement at time t + dt
+    #Gw: matrix that transforms process noise covarince to state covariance
+    #Q: process noise covriance matrix
+    #R: Sensor noise covariance matrix
+    #dt: time step
+
+    dz(t,zi) = stateDerivative(t, zi, lv.aeroData, lv.massData, lv.motorData, lv.latLong)
+    
+    chi, W = sigmaPointsWeights(zkk, length(zkk), Pkk)
 
     #calculating states for uncented sums 
-    fchi, hchi = zeros(size(chi)[1], size(chi)[2])
+    fchi = zeros(size(chi)[1], size(chi)[2])
+    hchi = zeros(Y_SIZE, size(chi)[2])
 
-    for (index, col) in enumerate(eachcol(chi))
 
-        fchi(:,index) = f(t, col)
-        hchi(:,index) = h(t, col)
+
+    for i = 1:size(chi)[2]
+
+        fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt)
+        hchi[:,i] = yhat(tk, chi[:,i], dz(tk, chi[:,i]))
 
     end
 
-    zk1k = fchi[:,1] #prediction step
+    #PREDICTION
+    zk1k = fchi[:,1]
+    Pk1k = Gw * Q * Gw'
+    wi = W[1] #set weight to the first index
+    for (index,fadd) in enumerate(eachcol(fchi))
 
-    unscented_sum = zeros(STATE_SIZE, STATE_SIZE)
+        #flip to other weight after the first index is added
+        if index == 2
+            wi = W[2]
+        end
 
+        Pk1k = Pk1k + wi * (fadd - zk1k) * transpose(fadd - zk1k)
+
+    end
+
+    #KALMAN UPDATE
+
+    yk1k = hchi[:,1] #predicted sensor reading
+    Sk1 = R
+    C = zeros(STATE_SIZE, Y_SIZE)
+
+    wi = W[1] #set weight to the first index
+    for i = 1:size(chi)[2]
+
+        #flip to other weight after the first index is added
+        if index == 2
+            wi = W[2]
+        end
+
+        Sk1 = Sk1 + wi * (hchi[:,i] - yk1k) * transpose(hchi[:,i] - yk1k)
+        C = C + wi * (fchi[:,i] - zk1k) * transpose(hchi[:,i] - yk1k)
+
+    end
+
+    Sk1_factorized = cholesky(Sk1)
+    zk1k1 = zk1k + C * Sk1_factorized \ (yk1 - yk1k)
+    Pk1k1 = Pk1k - C * Sk1_factorized \ transpose(C)
+
+    return zk1k1, Pk1k1
 
 end
 
@@ -145,10 +215,18 @@ let
 
     z_test = [0,0,1500,10,10,100.0,0,0,0,1,0,0,0]
     Pkk = diagm([5, 5, 5, 5, 5, 5, 0.01, 0.01, 0.01, 0.01, 0.1, 0.1, 0.5])
+    dt = 0.05
+
+    #testing kalman step
+
+    ti = 1.0
+
+    ukf_step(ti, z_test, Pkk, getGw(ti, z_test, dt, rocket), getQ(ti, z_test, rocket), R(ti, h(ti,z_test), rocket), dt, rocket)
+
 
     #testing sigmaPoints generator 
 
-    chi = sigmaPoints(z_test, STATE_SIZE, Pkk)
+    #chi = sigmaPoints(z_test, STATE_SIZE, Pkk)
 
 
     #testing the Gw function
