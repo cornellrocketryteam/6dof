@@ -77,10 +77,8 @@ struct rocket
     aeroData::aeroCharacterization
     massData::StructArray{massElement}
     motorData::Matrix{Float64}
-    latLong::Vector{Float64}
 
-    rocket(aeroData, massData, motorData) = new(aeroData, massData, motorData, [0.0; 0.0])
-    rocket(aeroData, massData, motorData, latLong) = new(aeroData, massData, motorData, latLong)
+    rocket(aeroData, massData, motorData) = new(aeroData, massData, motorData)
     
 
 end
@@ -168,6 +166,10 @@ function setWindData!(simInputs::simInputs, heights::Vector{Float64}, winds::Mat
 
     simInputs.windData = windData(heights, winds)
 
+end
+
+function copy(simParam::sim)
+    return sim(simParam.rocket, simParam.simInputs)
 end
 
 function vovToM(v::Vector)
@@ -559,6 +561,10 @@ function getWind(t::Float64, h::Float64, wind::windData)
     #wind: windData
     #return: VAOI_I
 
+    if(size(wind.heights)[1] == 0)
+        return zeros(3)
+    end
+
     i = 1
     while(i != length(wind.heights) && wind.heights[i+1] < h)
         i = i + 1
@@ -670,22 +676,6 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
 
 end
 
-
-#state derivative function
-# function stateDerivative!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64}, launchLatLong::Vector{Float64})
-#     #t: time
-#     #z: state
-#     #aeroData: data describing aero features
-#     #massData: !modifies! array of mass elements
-#     #motorData: data describing motor thrust
-#     #returns: derivative of each element of the state
-
-#     updateMassState!(t, massData, motorData) #updates massData given the current time and motor information
-
-#     #return stateDerivative(t, z, aeroData, massData, motorData, launchLatLong)
-   
-# end
-
 function stateDerivative!(t::Float64, z::Vector{Float64}, simParam::sim)
 
     updateMassState!(t, simParam.rocket.massData, simParam.rocket.motorData)
@@ -693,15 +683,6 @@ function stateDerivative!(t::Float64, z::Vector{Float64}, simParam::sim)
     return stateDerivative(t, z, simParam)
     
 end
-
-# function stateDerivative(t::Float64, z::Vector{Float64}, lv::rocket)
-#     #t: time    
-#     #z: state
-#     #lv: rocket struct that describes the rocket being worked with 
-    
-#     return stateDerivative(t, z, lv.aeroData, lv.massData, lv.motorData, lv.latLong)
-
-# end
 
 function stateDerivative(t::Float64, z::Vector{Float64}, simParam::sim)
 
@@ -746,72 +727,6 @@ function stateDerivative(t::Float64, z::Vector{Float64}, simParam::sim)
 
     return [v_I;a_I;dqB;dwB_B]
 end
-
-# function stateDerivative_var(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64}, launchLatLong::Vector{Float64})
-
-#     #t: time    
-#     #z: state
-#     #aeroData: data describing aero features
-#     #massData: array of mass elements
-#     #motorData: data describing motor thrust
-#     #returns: derivative of each element of the state
-
-
-#     #get aero forces/moments
-#     totalAero_I, aeroMoment_B = totalAeroForceMoment_var(t, z, aeroData, massData)
-
-#     #set up normal distribution for thrust
-#     wt = Normal(motorThrustMass(t, motorData, massData.initalMass[2])[1], getThrustVar(t))
-
-#     #get Ig_B
-#     Ig_B = getIg(massData)
-
-#     #accel calc
-#     #calculate mass
-#     m = sum(massData.currentMass)
-#     #Thrust #b3 direction 
-#     thrustMag = rand(wt)
-#     thrust_B = [0.0;0.0;thrustMag] #assume thrust along rocket axis
-#     thrust_I = rotateFrame(thrust_B, quatInv(z[7:10]))
-#     #Gravity
-#     grav_I = aGrav(z[1:3])
-#     #Ficticious
-#     Fict_I = aCorriolis(z, launchLatLong) + aCentrifugal(z, launchLatLong)
-    
-#     a_I = (thrust_I + totalAero_I)/m + grav_I + Fict_I
-
-#     #handling rocket sitting on pad
-#     if(t < 1.0 && a_I[3] < 0)
-#         a_I = [0.0, 0.0, 0.0]
-#     end
-
-#     #based on previous state
-#     v_I = z[4:6] 
-#     dqB = .5 * quatProd(z[7:10], [z[11:13];0]) #1/2 * q * [IwB; 0]
-
-#     #total moment:
-#     moment_B = aeroMoment_B
-#     #calc dqB_B
-#     dwB_B = Ig_B \ (moment_B - cross(z[11:13], Ig_B * z[11:13])) #moments shit
-
-#     return [v_I;a_I;dqB;dwB_B]
-# end
-
-# function stateDerivative_var!(t::Float64, z::Vector{Float64}, lv::rocket)
-
-#     updateMassState!(t, lv.massData, lv.motorData)
-
-#     return stateDerivative_var(t, z, lv.aeroData, lv.massData, lv.motorData, lv.latLong)
-
-# end
-
-# function stateDerivative_var!(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, motorData::Matrix{Float64}, launchLatLong::Vector{Float64})
-
-#     updateMassState!(t, massData, motorData)
-
-#     return stateDerivative_var(t, z, aeroData, massData, motorData, launchLatLong)
-
-# end
 
 #location of COM
 function getCOM(massData::StructArray{massElement})
@@ -1273,26 +1188,28 @@ end
 let
     
 
-    simParam = readJSONParam("simParam.JSON")
+    # simParam = readJSONParam("simParam.JSON")
 
-    winds = [5 10.0  5 20; 
-             10  5  5 20;
-             5  5  5 20 ]
+    # winds = [1 -5.0 10.0 0; 
+    #          0  0  0 0;
+    #          0  0  0 0]
 
-    h = [0.0, 1000, 2000, 3000]
+    # h = [0.0, 1000, 2000, 3000]
 
-    setWindData!(simParam.simInputs, h, winds)
-    simParam.simInputs.thrustVar = 0.9
+    # setWindData!(simParam.simInputs, h, winds)
+    # simParam.simInputs.thrustVar = 0.95
 
-    tspan, z = run(simParam)
+    # tspan, z = run(simParam)
+
+    # println(size(z)[1])
     
 #     #tspan, z = @timev run_var("simParam.JSON")
 
 # #    # ##  ##  ##  ##  ##
 
-    getAoAPlot_py(tspan, z)
+    # getAoAPlot_py(tspan, z)
 
-    getQuiverPlot_py(z, 1)
+    # getQuiverPlot_py(z, 1)
 
     ############ Past Testing ##########
 

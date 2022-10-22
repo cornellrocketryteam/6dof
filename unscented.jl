@@ -36,7 +36,7 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, simParam::sim)
     #return: Gw STATE_SIZE x 4 matrix w = [ww1, ww2, ww3, wt]
 
     Gw = zeros(STATE_SIZE, W_SIZE);
-    m = sum(rocket.massData.currentMass)
+    m = sum(simParam.rocket.massData.currentMass)
 
     #contribution from thrust uncertainty
     Gw[6, 4] = dt / m
@@ -49,7 +49,7 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, simParam::sim)
 
 
     #wind uncertainty
-    dfd_dwd = dt * 0.5 * getCd(aoa, mach, rocket.aeroData) * getA(aoa, rocket.aeroData) * expAtm(z[3]) * (vRAI_I * transpose(vRAI_I) / mag_vRAI_I + (I * mag_vRAI_I))/m
+    dfd_dwd = dt * 0.5 * getCd(aoa, mach, simParam.rocket.aeroData) * getA(aoa, simParam.rocket.aeroData) * expAtm(z[3]) * (vRAI_I * transpose(vRAI_I) / mag_vRAI_I + (I * mag_vRAI_I))/m
 
     Gw[4:6, 1:3] = dfd_dwd;
     
@@ -79,6 +79,12 @@ function sigmaPoints(zhat::Vector{Float64}, n::Int, Wo::Float64, Pkk::Matrix{Flo
     #returns: chi (n x n*2+1) matrix with columns as sigma points
 
     chi = zeros(n, n * 2 + 1)
+
+    if(!isposdef(Pkk))
+        println(zhat)
+        println(Pkk)
+    end
+
     Phalf = cholesky(Pkk);
     offset = sqrt(n/(1-Wo))
 
@@ -129,11 +135,12 @@ end
 function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
     accel_cov_factor = 0.03
+    accel_cov_base = 0.01
     gyro_cov_factor = 0.03
     baro_cov = 5
     mag_cov = 0.01 # no idea how to do this covariance 
 
-    return diagm([yhat[1] * accel_cov_factor, yhat[2] * accel_cov_factor, yhat[3] * accel_cov_factor, yhat[4] * gyro_cov_factor, yhat[5] * gyro_cov_factor, yhat[6] * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov, mag_cov])
+    return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov, mag_cov])
     
 end
 
@@ -148,7 +155,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #R: Sensor noise covariance matrix
     #dt: time step
 
-    updateMassState!(t, simParam.rocket.massData, simParam.rocket.motorData)
+    println(tk)
+    updateMassState!(tk, simParam.rocket.massData, simParam.rocket.motorData)
     dz(t,zi) = stateDerivative(t, zi, simParam)
     
     chi, W = sigmaPointsWeights(zkk, length(zkk), Pkk)
@@ -156,8 +164,6 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #calculating states for uncented sums 
     fchi = zeros(size(chi)[1], size(chi)[2])
     hchi = zeros(Y_SIZE, size(chi)[2])
-
-
 
     for i = 1:size(chi)[2]
 
@@ -191,7 +197,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     for i = 1:size(chi)[2]
 
         #flip to other weight after the first index is added
-        if index == 2
+        if i == 2
             wi = W[2]
         end
 
@@ -200,30 +206,107 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
-    Sk1_factorized = cholesky(Sk1)
-    zk1k1 = zk1k + C * Sk1_factorized \ (yk1 - yk1k)
-    Pk1k1 = Pk1k - C * Sk1_factorized \ transpose(C)
+    #Sk1_factorized = lu(Sk1)
+    zk1k1 = zk1k + C * (Sk1 \ (yk1 - yk1k))
+    Pk1k1 = Pk1k - C * (Sk1 \ transpose(C))
 
     return zk1k1, Pk1k1
 
 end
 
+function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64})
+    #simParam: sim struct that describes the expected behavior of the system (expected wind + ideal motor)
+    #y: matrix containing all the generated sensor data (length(tspan) x Y_SIZE)
+
+    num_steps = length(simParam.simInputs.tspan)
+    tspan = simParam.simInputs.tspan
+    dt = tspan[2] - tspan[1] #assumes equal time spacing
+
+
+    zhat = zeros(STATE_SIZE, num_steps)
+    Phat = zeros(STATE_SIZE, STATE_SIZE, num_steps)
+    
+    zhat[:,1] = simParam.simInputs.z0
+    Phat[:,:,1] = P0
+
+    for k = 1:num_steps - 1
+
+        Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
+        Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
+        Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
+        zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam)
+    end
+
+    return zhat, Phat
+
+end
+
+function testDataRun(simParam::sim, wind::windData, thrustVar::Float64)
+
+    simParamProcessNoise = copy(simParam)
+    simParamProcessNoise.simInputs.windData = wind
+    simParamProcessNoise.simInputs.thrustVar = thrustVar
+
+    tspan, z = run(simParamProcessNoise)
+    data = noisySensorData(tspan, z, simParamProcessNoise)
+
+    return tspan, z, data
+end
+
+function noisySensorData(tspan::Vector{Float64}, z::Matrix{Float64}, simParam::sim)
+
+    data = zeros(size(z)[1], Y_SIZE)
+    for i = 1:size(data)[1]
+
+        data[i, :] = yhat(tspan[i], z[i,:], simParam)'
+        Rk = R(tspan[i], data[i,:], simParam.rocket)
+        
+        if(isposdef(Rk))
+            dist = MvNormal(zeros(Y_SIZE), Rk)
+            noise = rand(dist)
+            data[i, :] = data[i, :] + noise
+        end
+
+    end
+
+    return data
+
+end
 
 let 
 
+    winds = [1 -5.0 10.0 0; 
+             0  0  0 0;
+             0  0  0 0]
+
+    h = [0.0, 1000, 2000, 3000]
+
+    trueWind = windData(h, winds)
+
+    #expected data
     simRead = readJSONParam("simParam.JSON")
-    rocket = simRead.rocket
+    setWindData!(simRead.simInputs, [0.0, 1000.0],  [3.0 5.0; 0.0 0.0; 0.0 0.0])
 
-    z_test = [0,0,1500,10,10,100.0,0,0,0,1,0,0,0]
-    Pkk = diagm([5, 5, 5, 5, 5, 5, 0.01, 0.01, 0.01, 0.01, 0.1, 0.1, 0.5])
-    dt = 0.05
+    tspan, expected_z = run(simRead)
 
-    #testing kalman step
+    tspan, z, y = testDataRun(simRead, trueWind, 1.05)
 
-    ti = 1.0
+    # getQuiverPlot_py(expected_z, 1)
+    # getQuiverPlot_py(z, 1)
 
-    ukf_step(ti, z_test, Pkk, getGw(ti, z_test, dt, rocket), getQ(ti, z_test, rocket), R(ti, h(ti,z_test), rocket), dt, rocket)
+    # figure()
+    # plot(tspan, y[:,3])
 
+    P0 = diagm([0.001,0.001,0.1,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
+
+    zhat, Phat = ukf(simRead, y, P0)
+
+
+    ##old tests
+
+    # z_test = [0,0,1500,10,10,100.0,0,0,0,1,0,0,0]
+    # Pkk = diagm([5, 5, 5, 5, 5, 5, 0.01, 0.01, 0.01, 0.01, 0.1, 0.1, 0.5])
+    # dt = 0.05
 
     #testing sigmaPoints generator 
 
