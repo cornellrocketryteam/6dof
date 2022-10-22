@@ -68,7 +68,7 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
     Q[4,4] = thrustVariation * thrust
 
     return Q
-    
+
 end
 
 
@@ -158,7 +158,7 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
     accel_cov_base = 0.1
     gyro_cov_factor = 0.05
     baro_cov = 30
-    mag_cov = 0.01 # no idea how to do this covariance 
+    mag_cov = 0.3 # no idea how to do this covariance 
 
     return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov, mag_cov])
     
@@ -343,13 +343,13 @@ let
     getQuiverPlot_py(expected_z, 1)
     getQuiverPlot_py(z, 1)
 
-    P0 = diagm([0.001,0.001,0.1,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
+    P0 = diagm([10.0,10.0,10.0,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
 
     zhat, Phat = ukf(simRead, y, P0)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
-    j = 6
+    j = 3
     plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
 

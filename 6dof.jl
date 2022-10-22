@@ -553,7 +553,7 @@ function getWind(t::Float64, h::Float64)
     #h: height above sea level
     #return: VAOI_I, Qw
 
-    return [0.0;0;0.0], 5 * diagm([1.0,1.0,0.1])
+    return [0.0;0;0.0], 10 * diagm([1.0,1.0,0.1])
 
 end
 
