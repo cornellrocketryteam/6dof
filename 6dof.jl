@@ -85,11 +85,27 @@ struct rocket
 
 end
 
-struct simInputs
+struct windData
+
+    heights::Vector{Float64}
+    wind::Matrix{Float64}
+
+    windData() = new([], Array{Float64}(undef, 3, 0))
+    windData(h, wind) = new(h, wind)
+
+end
+
+mutable struct simInputs
 
     tspan::Vector{Float64}
     z0::Vector{Float64}
     latLong::Vector{Float64}
+
+    windData::windData
+    thrustVar::Float64
+
+    simInputs(t, z0, latLong) = new(t, z0, latLong, windData(), 1.0)
+    simInputs(t, z0, latLong, windData, thrustVar) = new(t, z0, latLong, windData, thrustVar)
 end
 
 struct sim
@@ -145,6 +161,12 @@ function addData!(previous::aeroCharacterization, dataPoint::aeroDataPoint)
     previous.Cl[aoaIndex,machIndex] = dataPoint.Cl
     previous.COP[aoaIndex,machIndex] = dataPoint.COP
     previous.A[aoaIndex] = dataPoint.A
+
+end
+
+function setWindData!(simInputs::simInputs, heights::Vector{Float64}, winds::Matrix{Float64})
+
+    simInputs.windData = windData(heights, winds)
 
 end
 
@@ -531,6 +553,21 @@ function getWind(t::Float64, h::Float64)
 
 end
 
+function getWind(t::Float64, h::Float64, wind::windData)
+    #t: time since ignition
+    #h: height above sea level
+    #wind: windData
+    #return: VAOI_I
+
+    i = 1
+    while(i != length(wind.heights) && wind.heights[i+1] < h)
+        i = i + 1
+    end
+
+    return wind.wind[:,i]
+
+end
+
 function getLocalSoS(h::Float64)
     #h: height above sea level (m)
     #return: speed of sound in m/s
@@ -593,7 +630,7 @@ function updateMassState!(t::Float64, massData::StructArray{massElement}, motorD
 
 end
 
-function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement})
+function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroCharacterization, massData::StructArray{massElement}, windData::windData)
     #t: time since ignition
     #z: system state
     #aeroData: 
@@ -601,7 +638,7 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
     #returns: total aero force in inertial frame and total aero moment in beta frame
 
     #useful quantities
-    vAOI_I = getWind(t, z[3])[1]
+    vAOI_I = getWind(t, z[3], windData)
     vRAI_I = getVRA(z[4:6], vAOI_I)
     aoa = calcAoA(vRAI_I, z[7:10])
     mach = calcMach(vRAI_I, z[3])
@@ -674,7 +711,7 @@ function stateDerivative(t::Float64, z::Vector{Float64}, simParam::sim)
 
 
     #get aero forces/moments
-    totalAero_I, aeroMoment_B = totalAeroForceMoment(t, z, simParam.rocket.aeroData, simParam.rocket.massData)
+    totalAero_I, aeroMoment_B = totalAeroForceMoment(t, z, simParam.rocket.aeroData, simParam.rocket.massData, simParam.simInputs.windData)
 
     #get Ig_B
     Ig_B = getIg(simParam.rocket.massData)
@@ -683,7 +720,7 @@ function stateDerivative(t::Float64, z::Vector{Float64}, simParam::sim)
     #calculate mass
     m = sum(simParam.rocket.massData.currentMass)
     #Thrust #b3 direction 
-    thrustMag = motorThrustMass(t, simParam.rocket.motorData, simParam.rocket.massData.initalMass[2])[1]
+    thrustMag = motorThrustMass(t, simParam.rocket.motorData, simParam.rocket.massData.initalMass[2])[1] * simParam.simInputs.thrustVar
     thrust_B = [0.0;0.0;thrustMag] #assume thrust along rocket axis
     thrust_I = rotateFrame(thrust_B, quatInv(z[7:10]))
     #Gravity
@@ -1237,15 +1274,25 @@ let
     
 
     simParam = readJSONParam("simParam.JSON")
+
+    winds = [5 10.0  5 20; 
+             10  5  5 20;
+             5  5  5 20 ]
+
+    h = [0.0, 1000, 2000, 3000]
+
+    setWindData!(simParam.simInputs, h, winds)
+    simParam.simInputs.thrustVar = 0.9
+
     tspan, z = run(simParam)
     
-    #tspan, z = @timev run_var("simParam.JSON")
+#     #tspan, z = @timev run_var("simParam.JSON")
 
-#    # ##  ##  ##  ##  ##
+# #    # ##  ##  ##  ##  ##
 
-     getAoAPlot_py(tspan, z)
+    getAoAPlot_py(tspan, z)
 
-     getQuiverPlot_py(z, 1)
+    getQuiverPlot_py(z, 1)
 
     ############ Past Testing ##########
 

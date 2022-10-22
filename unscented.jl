@@ -28,7 +28,7 @@ const global Y_SIZE = 11;
 #functions 
 
 #implimentation of Gw(t,z)
-function getGw(t::Float64, z::Vector{Float64}, dt::Float64, rocket::rocket)
+function getGw(t::Float64, z::Vector{Float64}, dt::Float64, simParam::sim)
     #t: current time
     #z: state vector
     #dt: time step
@@ -41,7 +41,7 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, rocket::rocket)
     #contribution from thrust uncertainty
     Gw[6, 4] = dt / m
 
-    vAOI_I = getWind(t, z[3])[1]
+    vAOI_I = getWind(t, z[3], simParam.simInputs.windData)
     vRAI_I = getVRA(z[4:6], vAOI_I)
     mag_vRAI_I = norm(vRAI_I)
     aoa = calcAoA(vRAI_I, z[7:10])
@@ -108,9 +108,9 @@ function sigmaPointsWeights(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
 end
 
 #sensor function
-function yhat(t::Float64, zhat::Vector{Float64}, lv::rocket)
+function yhat(t::Float64, zhat::Vector{Float64}, simParam::sim)
 
-    return yhat(t, zhat, stateDerivative(t, zhat, lv))
+    return yhat(t, zhat, stateDerivative(t, zhat, simParam))
 
 end
 
@@ -138,7 +138,7 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 end
 
 #prediction step of unscented kalman filter
-function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, lv::rocket)
+function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, simParam::sim)
     #tk: systetm time at known step 
     #zkk: system state at current time (known)
     #Pkk: system covariance
@@ -148,7 +148,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #R: Sensor noise covariance matrix
     #dt: time step
 
-    dz(t,zi) = stateDerivative(t, zi, lv.aeroData, lv.massData, lv.motorData, lv.latLong)
+    updateMassState!(t, simParam.rocket.massData, simParam.rocket.motorData)
+    dz(t,zi) = stateDerivative(t, zi, simParam)
     
     chi, W = sigmaPointsWeights(zkk, length(zkk), Pkk)
 
