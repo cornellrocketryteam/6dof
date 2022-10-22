@@ -100,6 +100,35 @@ function sigmaPoints(zhat::Vector{Float64}, n::Int, Wo::Float64, Pkk::Matrix{Flo
 
 end
 
+function sigmaPointsAlt(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
+    #zhat: state estimate
+    #n: size of state vector
+    #Wo: weighting of first sigma point
+    #Pkk: covariance of state estimate
+    #returns: chi (n x n*2+1) matrix with columns as sigma points
+
+    chi = zeros(n, n * 2 + 1)
+
+    if(!isposdef(Pkk))
+        println(zhat)
+        printMat(Pkk)
+    end
+
+    Phalf = cholesky(Pkk);
+    offset = sqrt(n);
+
+    chi[:, 1] = zhat
+    for i = 1:n
+        
+        chi[:, 1 + i] = zhat + offset * Phalf.L[:,i]
+        chi[:, 1 + n + i] = zhat - offset * Phalf.L[:,i]
+
+    end
+
+    return chi
+
+end
+
 function sigmaPoints(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
 
     return sigmaPoints(zhat, n, 1.0 - n/3, Pkk)
@@ -175,6 +204,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #PREDICTION
     zk1k = fchi[:,1]
     Pk1k = Gw * Q * Gw'
+
     wi = W[1] #set weight to the first index
     for (index,fadd) in enumerate(eachcol(fchi))
 
@@ -182,8 +212,20 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         if index == 2
             wi = W[2]
         end
+        
+        fadd = (fadd - zk1k) * (fadd - zk1k)'
 
-        Pk1k = Pk1k + wi * (fadd - zk1k) * transpose(fadd - zk1k)
+        # print("fadd: ")
+        # println(isposdef(fadd))
+        # print("Pk1k pre: ")
+        # println(isposdef(Pk1k))
+
+        Pk1k = Pk1k + wi * fadd
+
+        # print("Pk1k post ")
+        # print(index)
+        # print(": ")
+        # println(isposdef(Pk1k))
 
     end
 
@@ -201,14 +243,25 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
             wi = W[2]
         end
 
-        Sk1 = Sk1 + wi * (hchi[:,i] - yk1k) * transpose(hchi[:,i] - yk1k)
-        C = C + wi * (fchi[:,i] - zk1k) * transpose(hchi[:,i] - yk1k)
+        Sk1 = Sk1 + wi * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
+        C = C + wi * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
 
     end
 
-    #Sk1_factorized = lu(Sk1)
-    zk1k1 = zk1k + C * (Sk1 \ (yk1 - yk1k))
-    Pk1k1 = Pk1k - C * (Sk1 \ transpose(C))
+    # print("Sk1 end: ")
+    # println(isposdef(Sk1))
+
+    Sk1_factorized = cholesky(Sk1)
+    zk1k1 = zk1k + C * (Sk1_factorized \ (yk1 - yk1k))
+    Pkadjust = Hermitian(C * (Sk1_factorized \ (C')))
+
+    # print("Pkadjust: ")
+    # println(isposdef(Pkadjust))
+
+    Pk1k1 = Pk1k - Pkadjust
+
+    # print("Pk1k1: ")
+    # println(isposdef(Pk1k1))
 
     return zk1k1, Pk1k1
 
@@ -230,6 +283,9 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64})
     Phat[:,:,1] = P0
 
     for k = 1:num_steps - 1
+
+        print("Check k at beginning: ")
+        println(isposdef(Phat[:,:,k]))
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
@@ -273,12 +329,25 @@ function noisySensorData(tspan::Vector{Float64}, z::Matrix{Float64}, simParam::s
 
 end
 
-let 
+function printMat(a::Matrix{Float64})
 
+    m,n = size(a)
+
+    for i = 1:m
+        for j = 1:n
+            @printf("%.4f", a[i,j])
+            print(", ")
+        end
+        println()
+    end
+
+end
+
+
+let 
     winds = [1 -5.0 10.0 0; 
              0  0  0 0;
              0  0  0 0]
-
     h = [0.0, 1000, 2000, 3000]
 
     trueWind = windData(h, winds)
@@ -291,8 +360,8 @@ let
 
     tspan, z, y = testDataRun(simRead, trueWind, 1.05)
 
-    # getQuiverPlot_py(expected_z, 1)
-    # getQuiverPlot_py(z, 1)
+    getQuiverPlot_py(expected_z, 1)
+    getQuiverPlot_py(z, 1)
 
     # figure()
     # plot(tspan, y[:,3])
@@ -300,6 +369,14 @@ let
     P0 = diagm([0.001,0.001,0.1,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
 
     zhat, Phat = ukf(simRead, y, P0)
+
+    println(size(zhat))
+    println(size(tspan))
+
+    getQuiverPlot_py(transpose(zhat), 1)
+
+
+
 
 
     ##old tests

@@ -26,6 +26,8 @@ using Optim
 using JSON
 using Random
 using Distributions
+using Printf
+using Base
 
 include("quat.jl")
 
@@ -397,7 +399,7 @@ end
 
 function getThrustVar(t::Float64)
 
-    return 0.05
+    return 0.03
     
 end
 
@@ -551,7 +553,7 @@ function getWind(t::Float64, h::Float64)
     #h: height above sea level
     #return: VAOI_I, Qw
 
-    return [0.0;0;0.0], [1 0 0; 0.0 1.0 0.0; 0 0 0.01]
+    return [0.0;0;0.0], diagm([1.0,1.0,0.1])
 
 end
 
@@ -936,7 +938,7 @@ function getAlignmentPlot(t::Vector{Float64}, z::Matrix{Float64})
 end
 
 #for use when using PyPlot
-function getQuiverPlot_py(z::Matrix{Float64}, secondDirection::Int)
+function getQuiverPlot_py(z::AbstractArray{Float64}, secondDirection::Int)
     #z: input matrix of state vectors
     #secondDimension: second dimension to be plotted (x or y)
     #gives quiverplot with scatter overlay
