@@ -68,6 +68,7 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
     Q[4,4] = thrustVariation * thrust
 
     return Q
+    
 end
 
 
@@ -79,11 +80,6 @@ function sigmaPoints(zhat::Vector{Float64}, n::Int, Wo::Float64, Pkk::Matrix{Flo
     #returns: chi (n x n*2+1) matrix with columns as sigma points
 
     chi = zeros(n, n * 2 + 1)
-
-    if(!isposdef(Pkk))
-        println(zhat)
-        println(Pkk)
-    end
 
     Phalf = cholesky(Pkk);
     offset = sqrt(n/(1-Wo))
@@ -108,11 +104,6 @@ function sigmaPointsAlt(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
     #returns: chi (n x n*2+1) matrix with columns as sigma points
 
     chi = zeros(n, n * 2 + 1)
-
-    if(!isposdef(Pkk))
-        println(zhat)
-        printMat(Pkk)
-    end
 
     Phalf = cholesky(Pkk);
     offset = sqrt(n);
@@ -163,10 +154,10 @@ end
 
 function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
-    accel_cov_factor = 0.03
-    accel_cov_base = 0.01
-    gyro_cov_factor = 0.03
-    baro_cov = 5
+    accel_cov_factor = 0.1
+    accel_cov_base = 0.1
+    gyro_cov_factor = 0.05
+    baro_cov = 30
     mag_cov = 0.01 # no idea how to do this covariance 
 
     return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov, mag_cov])
@@ -214,18 +205,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         end
         
         fadd = (fadd - zk1k) * (fadd - zk1k)'
-
-        # print("fadd: ")
-        # println(isposdef(fadd))
-        # print("Pk1k pre: ")
-        # println(isposdef(Pk1k))
-
         Pk1k = Pk1k + wi * fadd
-
-        # print("Pk1k post ")
-        # print(index)
-        # print(": ")
-        # println(isposdef(Pk1k))
 
     end
 
@@ -248,20 +228,11 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
-    # print("Sk1 end: ")
-    # println(isposdef(Sk1))
-
     Sk1_factorized = cholesky(Sk1)
     zk1k1 = zk1k + C * (Sk1_factorized \ (yk1 - yk1k))
     Pkadjust = Hermitian(C * (Sk1_factorized \ (C')))
 
-    # print("Pkadjust: ")
-    # println(isposdef(Pkadjust))
-
     Pk1k1 = Pk1k - Pkadjust
-
-    # print("Pk1k1: ")
-    # println(isposdef(Pk1k1))
 
     return zk1k1, Pk1k1
 
@@ -283,9 +254,6 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64})
     Phat[:,:,1] = P0
 
     for k = 1:num_steps - 1
-
-        print("Check k at beginning: ")
-        println(isposdef(Phat[:,:,k]))
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
@@ -343,6 +311,18 @@ function printMat(a::Matrix{Float64})
 
 end
 
+function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, title)
+
+    upperBound = zhat + 2 * sqrt.(Pu)
+    lowerBound = zhat - 2 * sqrt.(Pu)
+
+    figure()
+    plot(tspan, ztrue)
+    plot(tspan, zhat)
+    plot(tspan, upperBound, "--")
+    plot(tspan, lowerBound, "--")
+
+end
 
 let 
     winds = [1 -5.0 10.0 0; 
@@ -363,17 +343,17 @@ let
     getQuiverPlot_py(expected_z, 1)
     getQuiverPlot_py(z, 1)
 
-    # figure()
-    # plot(tspan, y[:,3])
-
     P0 = diagm([0.001,0.001,0.1,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
 
     zhat, Phat = ukf(simRead, y, P0)
 
-    println(size(zhat))
-    println(size(tspan))
-
     getQuiverPlot_py(transpose(zhat), 1)
+
+    j = 6
+    plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
+
+
+    
 
 
 
