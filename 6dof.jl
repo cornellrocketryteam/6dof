@@ -248,7 +248,7 @@ function readJSONParam(paramFilePath::String)
     #aero properties (fixed)
     dataSet = aeroCharacterization(AoA, Mach, Cd, Cl, COP, A)
 
-    bigRed = rocket(dataSet, massData, motorData, latLong)
+    bigRed = rocket(dataSet, massData, motorData)
     simInit = simInputs(tspan, z0, latLong)
 
     return sim(bigRed, simInit)
@@ -399,7 +399,7 @@ end
 
 function getThrustVar(t::Float64)
 
-    return 0.10
+    return 0.05
     
 end
 
@@ -553,7 +553,7 @@ function getWind(t::Float64, h::Float64)
     #h: height above sea level
     #return: VAOI_I, Qw
 
-    return [0.0;0;0.0], 10 * diagm([1.0,1.0,0.1])
+    return [0.0;0;0.0], 3 * diagm([1.0,1.0,0.1])
 
 end
 

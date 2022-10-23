@@ -16,7 +16,7 @@
 
 #y: Measurement 11x1: [y_accel, y_gyro, y_barox3, y_magq]
 #R: Sensor noise covariance 11x11
-#w: [ww1, ww2, ww3, wt]
+#w: [ww1, ww2, ww3, wt] 
 #Q: Process noise covariance 4x4
 
 include("6dof.jl")
@@ -154,11 +154,11 @@ end
 
 function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
-    accel_cov_factor = 0.1
-    accel_cov_base = 0.1
+    accel_cov_factor = 0.08
+    accel_cov_base = 0.02
     gyro_cov_factor = 0.05
-    baro_cov = 30
-    mag_cov = 0.3 # no idea how to do this covariance 
+    baro_cov = 10
+    mag_cov = 0.1 # no idea how to do this covariance 
 
     return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov, mag_cov])
     
@@ -313,6 +313,7 @@ end
 
 function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, title)
 
+    pygui(true)
     upperBound = zhat + 2 * sqrt.(Pu)
     lowerBound = zhat - 2 * sqrt.(Pu)
 
@@ -345,11 +346,11 @@ let
 
     P0 = diagm([10.0,10.0,10.0,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
 
-    zhat, Phat = ukf(simRead, y, P0)
+    zhat, Phat = @timev ukf(simRead, y, P0)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
-    j = 3
+    j = 7
     plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
 
