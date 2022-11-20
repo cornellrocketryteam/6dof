@@ -71,6 +71,28 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
 
 end
 
+function sigmaPoints_nsigma(zhat::Vector{Float64}, n::Int, nsigma::Float64, Pkk::Matrix{Float64})
+    #zhat: state estimate
+    #n: size of state vector
+    #nsigma: number of standard deviations to place the sigma point from the mean
+    #Pkk: covariance of state estimate
+    #returns: chi (n x n*2+1) matrix with columns as sigma points
+
+    chi = zeros(n, n * 2 + 1)
+
+    Phalf = cholesky(Pkk);
+
+    chi[:, 1] = zhat
+    for i = 1:n
+        
+        chi[:, 1 + i] = zhat + nsigma * Phalf.L[:,i]
+        chi[:, 1 + n + i] = zhat - nsigma * Phalf.L[:,i]
+
+    end
+
+    return chi
+    
+end
 
 function sigmaPoints(zhat::Vector{Float64}, n::Int, Wo::Float64, Pkk::Matrix{Float64})
     #zhat: state estimate
@@ -79,20 +101,9 @@ function sigmaPoints(zhat::Vector{Float64}, n::Int, Wo::Float64, Pkk::Matrix{Flo
     #Pkk: covariance of state estimate
     #returns: chi (n x n*2+1) matrix with columns as sigma points
 
-    chi = zeros(n, n * 2 + 1)
+    nsigma = sqrt(n/(1-Wo))
 
-    Phalf = cholesky(Pkk);
-    offset = sqrt(n/(1-Wo))
-
-    chi[:, 1] = zhat
-    for i = 1:n
-        
-        chi[:, 1 + i] = zhat + offset * Phalf.L[:,i]
-        chi[:, 1 + n + i] = zhat - offset * Phalf.L[:,i]
-
-    end
-
-    return chi
+    return sigmaPoints_nsigma(zhat, n, nsigma, Pkk)
 
 end
 
@@ -165,7 +176,7 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 end
 
 #prediction step of unscented kalman filter
-function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, simParam::sim)
+function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, simParam::sim, nsigma::Float64)
     #tk: systetm time at known step 
     #zkk: system state at current time (known)
     #Pkk: system covariance
@@ -179,7 +190,14 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     updateMassState!(tk, simParam.rocket.massData, simParam.rocket.motorData)
     dz(t,zi) = stateDerivative(t, zi, simParam)
     
-    chi, W = sigmaPointsWeights(zkk, length(zkk), Pkk)
+    chi = sigmaPoints_nsigma(zkk, length(zkk), nsigma, Pkk)
+
+    #calculating the weights to be used
+    w0S = (nsigma^2 - STATE_SIZE)/nsigma^2 #weight used for mean sigma point when calcuating state estimate
+    print("w0S: ")
+    println(w0S)
+    w0C = w0S - nsigma^2/STATE_SIZE + 3 #weight used for mean sigma-point when calculating coveriance
+    wi = 0.5 * 1/nsigma^2 #weight used for all other sigma points
 
     #calculating states for uncented sums 
     fchi = zeros(size(chi)[1], size(chi)[2])
@@ -193,38 +211,68 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     end
 
     #PREDICTION
-    zk1k = fchi[:,1]
-    Pk1k = Gw * Q * Gw'
 
-    wi = W[1] #set weight to the first index
+    #state predict
+    zk1k = zeros(STATE_SIZE,1)
+    w = w0S
     for (index,fadd) in enumerate(eachcol(fchi))
 
         #flip to other weight after the first index is added
         if index == 2
-            wi = W[2]
+            w = wi
+        end
+        
+        zk1k = zk1k + w * fadd
+
+    end
+
+    #covarince predeict
+    Pk1k = Gw * Q * Gw' #initialize with process noise addition
+    w = w0C #set weight to the first index
+    for (index,fadd) in enumerate(eachcol(fchi))
+
+        #flip to other weight after the first index is added
+        if index == 2
+            w = wi
         end
         
         fadd = (fadd - zk1k) * (fadd - zk1k)'
-        Pk1k = Pk1k + wi * fadd
+        Pk1k = Pk1k + w * fadd
 
     end
 
     #KALMAN UPDATE
 
-    yk1k = hchi[:,1] #predicted sensor reading
+    #predicted sensor reading
+    yk1k = zeros(Y_SIZE,1)
+    w = w0S
+    for (index,hadd) in enumerate(eachcol(hchi))
+
+        #flip to other weight after the first index is added
+        if index == 2
+            w = wi
+        end
+
+        yk1k = yk1k + w * hadd
+
+    end
+    
+    #covariance update
     Sk1 = R
     C = zeros(STATE_SIZE, Y_SIZE)
-
-    wi = W[1] #set weight to the first index
+    w = w0C #set weight to the first index
     for i = 1:size(chi)[2]
 
         #flip to other weight after the first index is added
         if i == 2
-            wi = W[2]
+            w = wi
         end
 
-        Sk1 = Sk1 + wi * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
-        C = C + wi * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
+        Sk1 = Sk1 + w * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
+        C = C + w * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
+        print(i)
+        print(": C: ")
+        println(isposdef(C))
 
     end
 
@@ -232,15 +280,19 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     zk1k1 = zk1k + C * (Sk1_factorized \ (yk1 - yk1k))
     Pkadjust = Hermitian(C * (Sk1_factorized \ (C')))
 
+    print("Pkadjust: ")
+    println(isposdef(Pkadjust))
     Pk1k1 = Pk1k - Pkadjust
 
     return zk1k1, Pk1k1
 
 end
 
-function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64})
+function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Float64)
     #simParam: sim struct that describes the expected behavior of the system (expected wind + ideal motor)
     #y: matrix containing all the generated sensor data (length(tspan) x Y_SIZE)
+    #P0: initial covariance matrix
+    #nsigma: parameter for chosing sigma points --> distance of sigma points from mean
 
     num_steps = length(simParam.simInputs.tspan)
     tspan = simParam.simInputs.tspan
@@ -258,7 +310,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64})
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
         Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
-        zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam)
+        zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
     end
 
     return zhat, Phat
@@ -346,7 +398,7 @@ let
 
     P0 = diagm([10.0,10.0,10.0,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
 
-    zhat, Phat = @timev ukf(simRead, y, P0)
+    zhat, Phat = @timev ukf(simRead, y, P0, 1.0)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
