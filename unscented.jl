@@ -215,10 +215,10 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     fchi = zeros(size(chi)[1], size(chi)[2])
     hchi = zeros(Y_SIZE, size(chi)[2])
 
+    #sigma points for prediction step only
     for i = 1:size(chi)[2]
 
-        fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma poimnt
-        #hchi[:,i] = yhat(tk, fchi[:,i], dz(tk, fchi[:,i])) #predicted sensor measurement for each propogated sigma point
+        fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma point
 
     end
 
@@ -259,12 +259,11 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #KALMAN UPDATE
     
     #redo sigma points with the predicted covariance
-    chi = sigmaPoints_nsigma(zk1k, length(zk1k), nsigma, Pk1k) #new sigma points (already propgated)
+    fchi = sigmaPoints_nsigma(zk1k, length(zk1k), nsigma, Pk1k) #new sigma points (already propgated as we are using zk1k)
 
     for i = 1:size(chi)[2]
 
-        #fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma poimnt
-        hchi[:,i] = yhat(tk, chi[:,i], dz(tk, chi[:,i])) #predicted sensor measurement for each propogated sigma point
+        hchi[:,i] = yhat(tk+dt, fchi[:,i], dz(tk+dt, fchi[:,i])) #predicted sensor measurement for each propogated sigma point
 
     end
 
@@ -288,8 +287,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     println(yk1k)
     
     #covariance update
-    Sk1 = R
-    C = zeros(STATE_SIZE, Y_SIZE)
+    Pk1k_yy = R
+    Pk1k_zy = zeros(STATE_SIZE, Y_SIZE)
     w = w0C #set weight to the first index
     for i = 1:size(chi)[2]
 
@@ -298,21 +297,22 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
             w = wi
         end
 
-        Sk1 = Sk1 + w * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
-        C = C + w * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
+        Pk1k_yy = Pk1k_yy + w * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
+        Pk1k_zy = Pk1k_zy + w * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
         print(i)
-        print(": Sk1: ")
-        println(isposdef(Sk1))
+        print(": Pk1k_zy: ")
+        println(isposdef(Pk1k_zy))
 
     end
-
-    Sk1_factorized = cholesky(Sk1)
-    zk1k1 = zk1k + C * (Sk1_factorized \ (yk1 - yk1k))
-    Pkadjust = Hermitian(C * (Sk1_factorized \ (C')))
+ 
+    zk1k1 = zk1k + Pk1k_zy * (Pk1k_yy \ (yk1 - yk1k))
+    Pkadjust = Hermitian(Pk1k_zy * (Pk1k_yy \ (Pk1k_zy')))
 
     print("Pkadjust: ")
     println(isposdef(Pkadjust))
-    Pk1k1 = Pk1k - Pkadjust
+    Pk1k1 = Hermitian(Pk1k - Pkadjust)
+    print("Pk1k1: ")
+    println(isposdef(Pk1k1))
 
     return zk1k1, Pk1k1
 
@@ -432,7 +432,7 @@ let
     getQuiverPlot_py(expected_z, 1)
     getQuiverPlot_py(z, 1)
 
-    P0 = diagm([10.0, 10.0, 10.0, 0.1, 0.1, 0.01, 1e-5, 1e-5, 1e-5, 1e-5, 0.001, 0.001, 0.001])
+    P0 = diagm([10.0, 10.0, 10.0, 0.1, 0.1, 0.01, 1e-5, 1e-5, 1e-5, 1e-5, 0.02, 0.02, 0.02])
 
     zhat, Phat = @timev ukf(simRead, y, P0, 4.5)
 
