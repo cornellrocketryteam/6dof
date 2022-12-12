@@ -31,7 +31,8 @@ using Base
 
 include("quat.jl")
 
-const global STATE_SIZE = 13
+
+const global R_STATE_SIZE = 13 #state vector for just the dynamics, no parameter estimation
 Random.seed!(1234)
 
 ########structs################
@@ -488,14 +489,14 @@ function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, 
 
     d1 = vRAI_I/norm(vRAI_I); #airflow direction
 
-    #if normVRAI_I is 0 (no airspeed)
+    #if normVRAI_I is 0 (airspeed = 0)
     if any(isnan.(d1))
         return zeros(3)
     end
 
     b3_I = rotateFrame([0.0;0.0;1.0], quatInv(q)) #dirction of rocket axis in intertial frame components
 
-    #probably impliment householder rotation soon instead, for now subtract off
+    #probably impliment Householder rotation soon instead, for now subtract off
 
     unnormed = b3_I - dot(b3_I, d1) * d1
     liftDirection = unnormed/norm(unnormed)
@@ -1190,28 +1191,28 @@ end
 let
     
 
-    # simParam = readJSONParam("simParam.JSON")
+#     simParam = readJSONParam("simParam.JSON")
 
-    # winds = [1 -5.0 10.0 0; 
-    #          0  0  0 0;
-    #          0  0  0 0]
+#     winds = [1 -5.0 10.0 0; 
+#              0  0  0 0;
+#              0  0  0 0]
 
-    # h = [0.0, 1000, 2000, 3000]
+#     h = [0.0, 1000, 2000, 3000]
 
-    # setWindData!(simParam.simInputs, h, winds)
-    # simParam.simInputs.thrustVar = 0.95
+#     setWindData!(simParam.simInputs, h, winds)
+#     simParam.simInputs.thrustVar = 0.95
 
-    # tspan, z = run(simParam)
+#     tspan, z = run(simParam)
 
-    # println(size(z)[1])
+#     println(size(z)[1])
     
 #     #tspan, z = @timev run_var("simParam.JSON")
 
 # #    # ##  ##  ##  ##  ##
 
-    # getAoAPlot_py(tspan, z)
+#     getAoAPlot_py(tspan, z)
 
-    # getQuiverPlot_py(z, 1)
+#     getQuiverPlot_py(z, 1)
 
     ############ Past Testing ##########
 

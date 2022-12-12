@@ -21,6 +21,7 @@
 
 include("6dof.jl")
 
+const global STATE_SIZE = 13 #estimation state size (including parameters)
 const global W_SIZE = 4;
 const global Y_SIZE = 11;
 
@@ -82,7 +83,7 @@ function sigmaPoints_nsigma(zhat::Vector{Float64}, n::Int, nsigma::Float64, Pkk:
 
     Phalf = cholesky(Pkk);
 
-    chi[:, 1] = zhat
+    chi[:, 1] = zhat #first sigma point is just the mean
     for i = 1:n
         
         chi[:, 1 + i] = zhat + nsigma * Phalf.L[:,i]
@@ -92,6 +93,19 @@ function sigmaPoints_nsigma(zhat::Vector{Float64}, n::Int, nsigma::Float64, Pkk:
 
     return chi
     
+end
+
+function nsigma_weights(nsigma::Float64)
+    #nsigma: number of std the sigma points are spaced from the mean
+    #returns: the three different weights to be used W0S, W0C, wi
+
+    W0S = (nsigma^2 - STATE_SIZE)/nsigma^2
+    W0C = W0S - nsigma^2/STATE_SIZE  + 3
+    wi = 0.5 * 1/nsigma^2
+
+    return W0S, W0C, wi
+
+
 end
 
 function sigmaPoints(zhat::Vector{Float64}, n::Int, Wo::Float64, Pkk::Matrix{Float64})
@@ -186,18 +200,16 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #R: Sensor noise covariance matrix
     #dt: time step
 
-    println(tk)
-    updateMassState!(tk, simParam.rocket.massData, simParam.rocket.motorData)
-    dz(t,zi) = stateDerivative(t, zi, simParam)
+    updateMassState!(tk, simParam.rocket.massData, simParam.rocket.motorData) #update mass with current time
+    dz(t,zi) = stateDerivative(t, zi, simParam) #find state derivative
     
     chi = sigmaPoints_nsigma(zkk, length(zkk), nsigma, Pkk)
 
     #calculating the weights to be used
-    w0S = (nsigma^2 - STATE_SIZE)/nsigma^2 #weight used for mean sigma point when calcuating state estimate
+    w0S, w0C, wi = nsigma_weights(nsigma)
     print("w0S: ")
     println(w0S)
-    w0C = w0S - nsigma^2/STATE_SIZE + 3 #weight used for mean sigma-point when calculating coveriance
-    wi = 0.5 * 1/nsigma^2 #weight used for all other sigma points
+
 
     #calculating states for uncented sums 
     fchi = zeros(size(chi)[1], size(chi)[2])
@@ -205,15 +217,15 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     for i = 1:size(chi)[2]
 
-        fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt)
-        hchi[:,i] = yhat(tk, chi[:,i], dz(tk, chi[:,i]))
+        fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma poimnt
+        #hchi[:,i] = yhat(tk, fchi[:,i], dz(tk, fchi[:,i])) #predicted sensor measurement for each propogated sigma point
 
     end
 
     #PREDICTION
 
     #state predict
-    zk1k = zeros(STATE_SIZE,1)
+    zk1k = zeros(STATE_SIZE)
     w = w0S
     for (index,fadd) in enumerate(eachcol(fchi))
 
@@ -225,6 +237,9 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         zk1k = zk1k + w * fadd
 
     end
+
+    print("zk1k: ")
+    println(zk1k)
 
     #covarince predeict
     Pk1k = Gw * Q * Gw' #initialize with process noise addition
@@ -242,9 +257,21 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     end
 
     #KALMAN UPDATE
+    
+    #redo sigma points with the predicted covariance
+    chi = sigmaPoints_nsigma(zk1k, length(zk1k), nsigma, Pk1k) #new sigma points (already propgated)
+
+    for i = 1:size(chi)[2]
+
+        #fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma poimnt
+        hchi[:,i] = yhat(tk, chi[:,i], dz(tk, chi[:,i])) #predicted sensor measurement for each propogated sigma point
+
+    end
+
+
 
     #predicted sensor reading
-    yk1k = zeros(Y_SIZE,1)
+    yk1k = zeros(Y_SIZE)
     w = w0S
     for (index,hadd) in enumerate(eachcol(hchi))
 
@@ -256,6 +283,9 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         yk1k = yk1k + w * hadd
 
     end
+
+    print("yk1k: ")
+    println(yk1k)
     
     #covariance update
     Sk1 = R
@@ -271,8 +301,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         Sk1 = Sk1 + w * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
         C = C + w * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
         print(i)
-        print(": C: ")
-        println(isposdef(C))
+        print(": Sk1: ")
+        println(isposdef(Sk1))
 
     end
 
@@ -307,10 +337,16 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
 
     for k = 1:num_steps - 1
 
+        print("STEP: ")
+        println(k)
+        
+
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
         Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
+
+        println("_________")
     end
 
     return zhat, Phat
@@ -378,7 +414,7 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
 end
 
 let 
-    winds = [1 -5.0 10.0 0; 
+    winds = [0 0.0 0.0 0; 
              0  0  0 0;
              0  0  0 0]
     h = [0.0, 1000, 2000, 3000]
@@ -396,9 +432,9 @@ let
     getQuiverPlot_py(expected_z, 1)
     getQuiverPlot_py(z, 1)
 
-    P0 = diagm([10.0,10.0,10.0,0.1,0.1,0.01,1e-5,1e-5,1e-5,1e-5, 0.001, 0.001, 0.001])
+    P0 = diagm([10.0, 10.0, 10.0, 0.1, 0.1, 0.01, 1e-5, 1e-5, 1e-5, 1e-5, 0.001, 0.001, 0.001])
 
-    zhat, Phat = @timev ukf(simRead, y, P0, 1.0)
+    zhat, Phat = @timev ukf(simRead, y, P0, 4.5)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
