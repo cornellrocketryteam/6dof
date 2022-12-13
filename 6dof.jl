@@ -262,6 +262,10 @@ function getA(AoA::Float64, data::aeroCharacterization)
     #data: struct array of aeroDataPoints
     #return: interpolated area
 
+    if (AoA > maximum(data.AoA))
+        AoA = maximum(data.AoA)
+    end
+
     interp = LinearInterpolation(data.AoA, data.A)
     return interp(AoA);
 
@@ -273,6 +277,11 @@ function getCd(AoA::Float64, Mach::Float64, data::aeroCharacterization)
     #Mach: input mach numbersString
     #data: struct array of aeroDataPoints
     #return: interpolated Cd
+
+    if (AoA > maximum(data.AoA))
+        AoA = maximum(data.AoA)
+    end
+
 
     interp = LinearInterpolation((data.AoA, data.Mach), data.Cd)
     return interp(AoA, Mach)
@@ -286,6 +295,10 @@ function getCl(AoA::Float64, Mach::Float64, data::aeroCharacterization)
     #data: struct array of aeroDataPoints
     #return: interpolated Cl
 
+    if (AoA > maximum(data.AoA))
+        AoA = maximum(data.AoA)
+    end
+
     interp = LinearInterpolation((data.AoA, data.Mach), data.Cl)
     return interp(AoA, Mach)
 
@@ -297,6 +310,10 @@ function getCOP(AoA::Float64, Mach::Float64, data::aeroCharacterization)
     #Mach: input mach numbersString
     #data: struct array of aeroDataPoints
     #return: interpolated COP
+
+    if (AoA > maximum(data.AoA))
+        AoA = maximum(data.AoA)
+    end
 
     interp = LinearInterpolation((data.AoA, data.Mach), data.COP)
     return [0;0;interp(AoA, Mach)]

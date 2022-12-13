@@ -207,8 +207,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     #calculating the weights to be used
     w0S, w0C, wi = nsigma_weights(nsigma)
-    print("w0S: ")
-    println(w0S)
+    # print("w0S: ")
+    # println(w0S)
 
 
     #calculating states for uncented sums 
@@ -238,8 +238,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
-    print("zk1k: ")
-    println(zk1k)
+    # print("zk1k: ")
+    # println(zk1k)
 
     #covarince predeict
     Pk1k = Gw * Q * Gw' #initialize with process noise addition
@@ -283,8 +283,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
-    print("yk1k: ")
-    println(yk1k)
+    # print("yk1k: ")
+    # println(yk1k)
     
     #covariance update
     Pk1k_yy = R
@@ -299,20 +299,27 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
         Pk1k_yy = Pk1k_yy + w * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
         Pk1k_zy = Pk1k_zy + w * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
-        print(i)
-        print(": Pk1k_zy: ")
-        println(isposdef(Pk1k_zy))
+        # print(i)
+        # print(": Pk1k_zy: ")
+        # println(isposdef(Pk1k_zy))
 
     end
  
     zk1k1 = zk1k + Pk1k_zy * (Pk1k_yy \ (yk1 - yk1k))
     Pkadjust = Hermitian(Pk1k_zy * (Pk1k_yy \ (Pk1k_zy')))
 
-    print("Pkadjust: ")
-    println(isposdef(Pkadjust))
+    factor = 1.0
+    # print("Pkadjust: ")
+    # println(isposdef(Pkadjust))
     Pk1k1 = Hermitian(Pk1k - Pkadjust)
-    print("Pk1k1: ")
-    println(isposdef(Pk1k1))
+
+    while(!(isposdef(Pk1k1)) || factor < 0.01)
+        factor = factor * 0.5
+        print("Factor: ")
+        println(factor)
+        Pk1k1 = Pk1k - factor * Pkadjust
+    end
+
 
     return zk1k1, Pk1k1
 
@@ -337,8 +344,8 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
 
     for k = 1:num_steps - 1
 
-        print("STEP: ")
-        println(k)
+        # print("STEP: ")
+        # println(k)
         
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
@@ -346,7 +353,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
         Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
 
-        println("_________")
+        # println("_________")
     end
 
     return zhat, Phat
@@ -438,7 +445,7 @@ let
 
     getQuiverPlot_py(transpose(zhat), 1)
 
-    j = 7
+    j = 3
     plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
 
