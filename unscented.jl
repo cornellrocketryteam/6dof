@@ -158,6 +158,22 @@ function sigmaPointsWeights(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
 
 end
 
+function ntheta2quatCov(n::Vector{Float64}, theta::Float64, dn::Vector{Float64}, dtheta::Float64)
+    #n: rotation axis
+    #theta: rotation angle
+    #dn: diagonal elements of n covariance (assuming no cross covariance)
+    #dtheta: covariance of angle theta
+    #returns: dq diagonal of covariance of quaternion 
+
+    #not sure how riggorus this is?
+
+    dq_theta = vcat(0.5 * cos(theta/2) * n * dtheta, -0.5 * sin(theta/2) * dtheta)
+    dq = dq_theta + vcat(dn, 0)
+
+    return dq .* dq
+
+end
+
 #sensor function
 function yhat(t::Float64, zhat::Vector{Float64}, simParam::sim)
 
@@ -317,7 +333,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         factor = factor * 0.5
         print("Factor: ")
         println(factor)
-        Pk1k1 = Pk1k - factor * Pkadjust
+        Pk1k1 = Hermitian(Pk1k - factor * Pkadjust)
     end
 
 
@@ -344,8 +360,8 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
 
     for k = 1:num_steps - 1
 
-        # print("STEP: ")
-        # println(k)
+        print("STEP: ")
+        println(k)
         
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
@@ -353,7 +369,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
         Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
 
-        # println("_________")
+        println("_________")
     end
 
     return zhat, Phat
@@ -421,8 +437,8 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
 end
 
 let 
-    winds = [0 0.0 0.0 0; 
-             0  0  0 0;
+    winds = [0 0.0 18.0 0; 
+             10  0  0 0;
              0  0  0 0]
     h = [0.0, 1000, 2000, 3000]
 
@@ -432,14 +448,22 @@ let
     simRead = readJSONParam("simParam.JSON")
     setWindData!(simRead.simInputs, [0.0, 1000.0],  [3.0 5.0; 0.0 0.0; 0.0 0.0])
 
+    n0 = [0,1.0,0]
+    theta0 = 5 * pi/180
+
+    dq = ntheta2quatCov(n0, theta0, [0.1,0.1,0.1], 0.05)
+    dx = [10.0,10.0,10.0]
+    dv = [0.01,0.01,0.01]
+    dw = [0.01,0.01,0.01]
+
+    P0 = diagm(vcat(dx,dv,dq,dw))
+
     tspan, expected_z = run(simRead)
 
     tspan, z, y = testDataRun(simRead, trueWind, 1.05)
 
     getQuiverPlot_py(expected_z, 1)
     getQuiverPlot_py(z, 1)
-
-    P0 = diagm([10.0, 10.0, 10.0, 0.1, 0.1, 0.01, 1e-5, 1e-5, 1e-5, 1e-5, 0.02, 0.02, 0.02])
 
     zhat, Phat = @timev ukf(simRead, y, P0, 4.5)
 
