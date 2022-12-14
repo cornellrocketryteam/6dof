@@ -463,23 +463,23 @@ let
 
     tspan, expected_z = run(simRead)
 
-    tspan, z, y = testDataRun(simRead, trueWind, 1.1)
+    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.1)
 
-    getQuiverPlot_py(expected_z, 1)
-    getQuiverPlot_py(z, 1)
+    #getQuiverPlot_py(expected_z, 1)
+    getQuiverPlot_py(ztrue, 1)
 
     zhat, Phat = @timev ukf(simRead, y, P0, 0.8)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
     j = 3
-    plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
+    plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
     j = 6
-    plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
+    plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
     j = 11
-    plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
+    plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
     
 
 
