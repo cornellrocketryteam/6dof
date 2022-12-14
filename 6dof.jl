@@ -417,7 +417,7 @@ end
 
 function getThrustVar(t::Float64)
 
-    return 0.1
+    return 0.2
     
 end
 

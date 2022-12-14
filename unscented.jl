@@ -259,6 +259,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     #covarince predeict
     Pk1k = Gw * Q * Gw' #initialize with process noise addition
+    Pk1k = Pk1k + diagm([0.0,0.0,0.0,1.0,1.0,1.0,0.0,0.0,0.0,0.0,0.1,0.1,0.1])
 
     w = w0C #set weight to the first index
     for (index,fadd) in enumerate(eachcol(fchi))
@@ -268,8 +269,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
             w = wi
         end
         
-        fadd = (fadd - zk1k) * (fadd - zk1k)'
-        Pk1k = Pk1k + w * fadd
+        fadd = Hermitian((fadd - zk1k) * (fadd - zk1k)')
+        Pk1k = Matrix(Hermitian(Pk1k + w * fadd))
 
     end
 
@@ -440,7 +441,7 @@ end
 
 let 
     winds = [0 0.0 10.0 0; 
-             10  0  0 0;
+             10.0  0  0 0;
              0  0  0 0]
     h = [0.0, 1000, 2000, 3000]
 
@@ -462,21 +463,24 @@ let
 
     tspan, expected_z = run(simRead)
 
-    tspan, z, y = testDataRun(simRead, trueWind, 1.05)
+    tspan, z, y = testDataRun(simRead, trueWind, 1.1)
 
     getQuiverPlot_py(expected_z, 1)
     getQuiverPlot_py(z, 1)
 
-    zhat, Phat = @timev ukf(simRead, y, P0, 4.5)
+    zhat, Phat = @timev ukf(simRead, y, P0, 0.8)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
     j = 3
     plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
+    j = 6
+    plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
+    j = 11
+    plotEstimator(tspan, z[:,j], zhat[j,:], Phat[j,j,:], "Testing")
     
-
 
 
 
