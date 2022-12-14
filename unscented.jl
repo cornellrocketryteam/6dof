@@ -259,6 +259,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     #covarince predeict
     Pk1k = Gw * Q * Gw' #initialize with process noise addition
+
     w = w0C #set weight to the first index
     for (index,fadd) in enumerate(eachcol(fchi))
 
@@ -433,11 +434,12 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
     plot(tspan, zhat)
     plot(tspan, upperBound, "--")
     plot(tspan, lowerBound, "--")
+    legend(["ztrue", "zhat"])
 
 end
 
 let 
-    winds = [0 0.0 18.0 0; 
+    winds = [0 0.0 10.0 0; 
              10  0  0 0;
              0  0  0 0]
     h = [0.0, 1000, 2000, 3000]
