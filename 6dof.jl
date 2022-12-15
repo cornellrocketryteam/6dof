@@ -417,7 +417,7 @@ end
 
 function getThrustVar(t::Float64)
 
-    return 0.2
+    return 0.1
     
 end
 
@@ -1212,28 +1212,28 @@ end
 let
     
 
-    simParam = readJSONParam("simParam.JSON")
+#     simParam = readJSONParam("simParam.JSON")
 
-    winds = [1 -10.0 10.0 0; 
-             0  0  0 0;
-             0  0  0 0]
+#     winds = [1 -10.0 10.0 0; 
+#              0  0  0 0;
+#              0  0  0 0]
 
-    h = [0.0, 1000, 2000, 3000]
+#     h = [0.0, 1000, 2000, 3000]
 
-    setWindData!(simParam.simInputs, h, winds)
-    simParam.simInputs.thrustVar = 0.95
+#     setWindData!(simParam.simInputs, h, winds)
+#     simParam.simInputs.thrustVar = 0.95
 
-    tspan, z = run(simParam)
+#     tspan, z = run(simParam)
 
-    println(size(z)[1])
+#     println(size(z)[1])
     
-    #tspan, z = @timev run_var("simParam.JSON")
+#     #tspan, z = @timev run_var("simParam.JSON")
 
-# #    # ##  ##  ##  ##  ##
+# # #    # ##  ##  ##  ##  ##
 
-    getAoAPlot_py(tspan, z)
+#     getAoAPlot_py(tspan, z)
 
-    getQuiverPlot_py(z, 1)
+#     getQuiverPlot_py(z, 1)
 
     ############ Past Testing ##########
 

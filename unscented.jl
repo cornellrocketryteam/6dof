@@ -16,13 +16,13 @@
 
 #y: Measurement 11x1: [y_accel, y_gyro, y_barox3, y_magq]
 #R: Sensor noise covariance 11x11
-#w: [ww1, ww2, ww3, wt] 
+#w: [ww1, ww2, ww3, wt, wF1, wF2, wF3, wm1, wm2, wm3] 
 #Q: Process noise covariance 4x4
 
 include("6dof.jl")
 
 const global STATE_SIZE = 13 #estimation state size (including parameters)
-const global W_SIZE = 4;
+const global W_SIZE = 10;
 const global Y_SIZE = 11;
 
 
@@ -41,6 +41,8 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, simParam::sim)
 
     #contribution from thrust uncertainty
     Gw[6, 4] = dt / m
+    Gw[4:6, 5:7] = (dt / m) * diagm(ones(3))  #contribution of general forcing uncertainty
+    Gw[11:13, 8:10] = dt * inv(getIg(simParam.rocket.massData)) #contribution of general moment uncertainty
 
     vAOI_I = getWind(t, z[3], simParam.simInputs.windData)
     vRAI_I = getVRA(z[4:6], vAOI_I)
@@ -62,14 +64,19 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
 
     Qwind = getWind(t, z[3])[2]
     thrust = motorThrustMass(t, lv.motorData, lv.massData.initalMass[2])[1]
+    Ig_B = getIg(lv.massData)
     thrustVariation = getThrustVar(t)
 
-    Q = zeros(4,4)
+    addativeForceProcessNoise = 5.0 #Newtons^2
+    addativeMomentProcessNoise = 2.0  #(Nm)^2
+
+    Q = zeros(W_SIZE,W_SIZE)
     Q[1:3,1:3] = Qwind
     Q[4,4] = thrustVariation * thrust
+    Q[5:7,5:7] = addativeForceProcessNoise * diagm(ones(3))
+    Q[8:10,8:10] = addativeMomentProcessNoise * diagm(ones(3))
 
     return Q
-
 end
 
 function sigmaPoints_nsigma(zhat::Vector{Float64}, n::Int, nsigma::Float64, Pkk::Matrix{Float64})
@@ -259,8 +266,6 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     #covarince predeict
     Pk1k = Gw * Q * Gw' #initialize with process noise addition
-    Pk1k = Pk1k + diagm([0.0,0.0,0.0,1.0,1.0,1.0,0.0,0.0,0.0,0.0,0.1,0.1,0.1])
-
     w = w0C #set weight to the first index
     for (index,fadd) in enumerate(eachcol(fchi))
 
@@ -368,7 +373,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
-        Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
+        Rw = R(tspan[k+1], yhat(tspan[k+1], zhat[:,k+1], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
 
         println("_________")
@@ -440,8 +445,8 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
 end
 
 let 
-    winds = [0 0.0 10.0 0; 
-             10.0  0  0 0;
+    winds = [0.0 0.0 0.0 0; 
+             0 0  0 0;
              0  0  0 0]
     h = [0.0, 1000, 2000, 3000]
 
@@ -449,8 +454,9 @@ let
 
     #expected data
     simRead = readJSONParam("simParam.JSON")
-    setWindData!(simRead.simInputs, [0.0, 1000.0],  [3.0 5.0; 0.0 0.0; 0.0 0.0])
+    setWindData!(simRead.simInputs, [0.0, 1000.0],  [0.0 0.0; 0.0 0.0; 0.0 0.0])
 
+    #needs to match that in the sim param file
     n0 = [0,1.0,0]
     theta0 = 5 * pi/180
 
@@ -461,18 +467,19 @@ let
 
     P0 = diagm(vcat(dx,dv,dq,dw))
 
-    tspan, expected_z = run(simRead)
+    # tspan, expected_z = run(simRead) 
 
-    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.1)
+    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
 
     #getQuiverPlot_py(expected_z, 1)
+
     getQuiverPlot_py(ztrue, 1)
 
     zhat, Phat = @timev ukf(simRead, y, P0, 0.8)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
-    j = 3
+    j = 1
     plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
     j = 6
@@ -486,6 +493,9 @@ let
 
 
     ##old tests
+
+    #code for displaying whole matrix thing 
+    #show(IOContext(stdout, :limit=>false), MIME"text/plain"(), <MATRIX>)
 
     # z_test = [0,0,1500,10,10,100.0,0,0,0,1,0,0,0]
     # Pkk = diagm([5, 5, 5, 5, 5, 5, 0.01, 0.01, 0.01, 0.01, 0.1, 0.1, 0.5])
