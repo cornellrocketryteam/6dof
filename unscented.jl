@@ -373,7 +373,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
-        Rw = R(tspan[k+1], yhat(tspan[k+1], zhat[:,k+1], simParam), simParam.rocket)
+        Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
 
         println("_________")
@@ -471,21 +471,22 @@ let
 
     tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
 
-    #getQuiverPlot_py(expected_z, 1)
+    # getQuiverPlot_py(expected_z, 1)
+
 
     getQuiverPlot_py(ztrue, 1)
 
-    zhat, Phat = @timev ukf(simRead, y, P0, 0.8)
+    zhat, Phat = @timev ukf(simRead, y, P0, 0.5)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
-    j = 1
+    j = 3
     plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
     j = 6
     plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
 
-    j = 11
+    j = 10
     plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
     
 
