@@ -498,26 +498,30 @@ function getDrag(vRAI_I::Vector{Float64}, Cd::Float64, A::Float64, ρ::Float64)
 end
 
 #lift force
-function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, q::Vector{Float64})
+function getLift(vRAI_I::Vector{Float64}, Cl::Float64, A::Float64, ρ::Float64, q::Vector{Float64}, AoA::Float64)
     #vRAI_I: velocity of rocket wrt to air (m/s)
     #Cl: coefficient of lift
     #A: area normal to velcoty vector
     #ρ: air density (kg/m^3)
+    #q: quaternion representing orientation of rocket
+
+    #This truely represents the normal force (perpendicular to rocket axis)
 
     d1 = vRAI_I/norm(vRAI_I); #airflow direction
 
-    #if normVRAI_I is 0 (airspeed = 0)
+    #if normVRAI_I is 0 (airspeed = 0) 
     if any(isnan.(d1))
         return zeros(3)
     end
 
     b3_I = rotateFrame([0.0;0.0;1.0], quatInv(q)) #dirction of rocket axis in intertial frame components
 
-    #probably impliment Householder rotation soon instead, for now subtract off
+    #probably impliment Householder reflection soon instead, for now subtract off
 
-    unnormed = b3_I - dot(b3_I, d1) * d1
+    unnormed = dot(b3_I, d1) * b3_I -  d1
     liftDirection = unnormed/norm(unnormed)
-    mag = .5 * Cl  * ρ * norm(vRAI_I)^2 * A
+    Cln = (Cl * AoA) #modified Cl based on angle of attack
+    mag = .5 * Cln * ρ * norm(vRAI_I)^2 * A
 
     return liftDirection * mag
 end
@@ -675,7 +679,7 @@ function totalAeroForceMoment(t::Float64, z::Vector{Float64}, aeroData::aeroChar
 
     
     drag_I = getDrag(vRAI_I, cd, A, ρ)
-    lift_I = getLift(vRAI_I, cl, A, ρ, z[7:10])
+    lift_I = getLift(vRAI_I, cl, A, ρ, z[7:10], aoa)
 
     drag_b = rotateFrame(drag_I, z[7:10])
     lift_b = rotateFrame(lift_I, z[7:10])
@@ -1208,28 +1212,28 @@ end
 let
     
 
-#     simParam = readJSONParam("simParam.JSON")
+    simParam = readJSONParam("simParam.JSON")
 
-#     winds = [1 -5.0 10.0 0; 
-#              0  0  0 0;
-#              0  0  0 0]
+    winds = [1 -10.0 10.0 0; 
+             0  0  0 0;
+             0  0  0 0]
 
-#     h = [0.0, 1000, 2000, 3000]
+    h = [0.0, 1000, 2000, 3000]
 
-#     setWindData!(simParam.simInputs, h, winds)
-#     simParam.simInputs.thrustVar = 0.95
+    setWindData!(simParam.simInputs, h, winds)
+    simParam.simInputs.thrustVar = 0.95
 
-#     tspan, z = run(simParam)
+    tspan, z = run(simParam)
 
-#     println(size(z)[1])
+    println(size(z)[1])
     
-#     #tspan, z = @timev run_var("simParam.JSON")
+    #tspan, z = @timev run_var("simParam.JSON")
 
 # #    # ##  ##  ##  ##  ##
 
-#     getAoAPlot_py(tspan, z)
+    getAoAPlot_py(tspan, z)
 
-#     getQuiverPlot_py(z, 1)
+    getQuiverPlot_py(z, 1)
 
     ############ Past Testing ##########
 
