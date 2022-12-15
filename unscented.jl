@@ -67,8 +67,8 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
     Ig_B = getIg(lv.massData)
     thrustVariation = getThrustVar(t)
 
-    addativeForceProcessNoise = 5.0 #Newtons^2
-    addativeMomentProcessNoise = 2.0  #(Nm)^2
+    addativeForceProcessNoise = 625.0 #Newtons^2
+    addativeMomentProcessNoise = 100.0  #(Nm)^2
 
     Q = zeros(W_SIZE,W_SIZE)
     Q[1:3,1:3] = Qwind
@@ -261,6 +261,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
+    #zk1k = fchi[:,1]
+
     # print("zk1k: ")
     # println(zk1k)
 
@@ -306,6 +308,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
+    #yk1k = hchi[:,1]
+
     # print("yk1k: ")
     # println(yk1k)
     
@@ -328,6 +332,9 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
  
+    # print("yk1-yk1k")
+    # println(yk1 - yk1k)
+
     zk1k1 = zk1k + Pk1k_zy * (Pk1k_yy \ (yk1 - yk1k))
     Pkadjust = Hermitian(Pk1k_zy * (Pk1k_yy \ (Pk1k_zy')))
 
@@ -376,7 +383,6 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
         Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
 
-        println("_________")
     end
 
     return zhat, Phat
@@ -429,18 +435,36 @@ function printMat(a::Matrix{Float64})
 
 end
 
-function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, title)
+function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, t::String)
 
     pygui(true)
     upperBound = zhat + 2 * sqrt.(Pu)
     lowerBound = zhat - 2 * sqrt.(Pu)
 
     figure()
+    title(t)
     plot(tspan, ztrue)
     plot(tspan, zhat)
     plot(tspan, upperBound, "--")
     plot(tspan, lowerBound, "--")
     legend(["ztrue", "zhat"])
+
+end
+
+
+function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, t::String)
+
+    pygui(true)
+    upperBound = 2 * sqrt.(Pu)
+    lowerBound = -2 * sqrt.(Pu)
+
+    figure()
+    title(t)
+    plot(tspan, (ztrue - zhat))
+    axhline(y = 0.0, color="red")
+    plot(tspan, upperBound, "--")
+    plot(tspan, lowerBound, "--")
+    legend(["error", "ztrue"])
 
 end
 
@@ -476,18 +500,18 @@ let
 
     getQuiverPlot_py(ztrue, 1)
 
-    zhat, Phat = @timev ukf(simRead, y, P0, 0.5)
+    zhat, Phat = @timev ukf(simRead, y, P0, 1.0)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
     j = 3
-    plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3")
 
     j = 6
-    plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
 
-    j = 10
-    plotEstimator(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "Testing")
+    j = 4
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v1")
     
 
 
