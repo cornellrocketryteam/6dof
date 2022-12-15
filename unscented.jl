@@ -205,10 +205,13 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
     accel_cov_factor = 0.08
     accel_cov_base = 0.02
     gyro_cov_factor = 0.05
-    baro_cov = 10
+    baro_cov = 100
     mag_cov = 0.1 # no idea how to do this covariance 
 
     return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov, mag_cov])
+
+        
+
     
 end
 
@@ -260,6 +263,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         zk1k = zk1k + w * fadd
 
     end
+
+    #println(quatMag(zk1k[7:10]))
 
     #zk1k = fchi[:,1]
 
@@ -341,13 +346,13 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     factor = 1.0
     # print("Pkadjust: ")
     # println(isposdef(Pkadjust))
-    Pk1k1 = Hermitian(Pk1k - Pkadjust)
+    Pk1k1 = Pk1k - Pkadjust
 
-    while(!(isposdef(Pk1k1)) || factor < 0.01)
-        factor = factor * 0.5
+    while(!(isposdef(Pk1k1)) && factor > 0.01)
+        factor = factor * 0.9999
         print("Factor: ")
         println(factor)
-        Pk1k1 = Hermitian(Pk1k - factor * Pkadjust)
+        Pk1k1 = Pk1k - factor * Pkadjust
     end
 
 
@@ -496,7 +501,6 @@ let
     tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
 
     # getQuiverPlot_py(expected_z, 1)
-
 
     getQuiverPlot_py(ztrue, 1)
 

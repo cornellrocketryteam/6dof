@@ -34,4 +34,12 @@ function quatInv(q::Vector{Float64})
 
 end
 
+function quatMag(q::Vector{Float64})
+    #q: quaternion (or hopefully)
+    #returns: magnitude (should always be 1 if a true quaternion)
+
+    return norm(q)
+
+end
+
 
