@@ -257,21 +257,12 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     fchi = zeros(size(chi)[1], size(chi)[2])
 
     #sigma points for prediction step only
-    zk1k = zeros(R_STATE_SIZE,1) #make state prediction to retrieve propgated q
     w = w0S
     for i = 1:size(chi)[2]
 
         fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma point
 
-        if i == 2
-            w = wi
-        end
-
-        #add new sigma point to state vector
-        zk1k = zk1k + w * fchi[:,i]
-
     end
-    #qk1k = zk1k[7:10] #find propogated quaternion
     qk1k = fchi[7:10,1]
 
     #transform each propogated sigma point back to estimator state
