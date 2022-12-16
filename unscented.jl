@@ -32,7 +32,7 @@ const global STATE_SIZE = 13 #estimator state size
 const global RE_STATE_SIZE = 14 #estimator and rocket state (rocket state + parameters)
 const global W_SIZE = 11;
 const global Y_SIZE = 10;
-const global Be_I = [0;1.0;0.0] #direction of the Earths magnetic field in the inertial frame
+const global Be_I = [0.0;1.0;0.0] #direction of the Earths magnetic field in the inertial frame
 global a = 1.0 #constant used in the back and forth between generalizedd Rodrigues error vector and error quaternion
 
 
@@ -578,7 +578,7 @@ let
     dx = [10.0,10.0,5.0]
     dv = [0.01,0.01,0.01]
     dw = [0.01,0.01,0.01]
-    dTv = 1e-6
+    dTv = 1e-9
 
     P0 = diagm(vcat(dx,dv,ds,dw, dTv))
 
