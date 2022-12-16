@@ -196,14 +196,22 @@ end
 
 function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
-    accel_cov_factor = 0.08
-    accel_cov_base = 0.02
-    gyro_cov_factor = 0.05
-    baro_cov = 100
-    mag_cov = 0.05 #measurement error of the magnetic field directions
+    accel_cov_factor = 0.0001 #(m^2s^-4)
+    accel_cov_base = 0.02   #(m^2s^-4)
+    gyro_cov_factor = 0.0001 #(s^-2)
+    baro_cov = 100 #(m^2)
+    mag_cov = 0.01 #measurement error of the magnetic field directions
 
-    return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov])
+    rvec = [ones(3) * accel_cov_factor; ones(3) * gyro_cov_factor; baro_cov; ones(3) * mag_cov]
+    #rvec = [abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov]
+    #rvec = [yhat[1]^2 * accel_cov_factor + accel_cov_base, yhat[2]^2 * accel_cov_factor + accel_cov_base, yhat[3]^2 * accel_cov_factor + accel_cov_base, yhat[4]^2 * gyro_cov_factor, yhat[5]^2 * gyro_cov_factor, yhat[6]^2 * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov]
+
+    return diagm(rvec)
     
+end
+
+function R_datagen(t::Float64, yhat::Vector{Float64}, lv::rocket)
+
 end
 
 #prediction step of unscented kalman filter
@@ -217,7 +225,6 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #R: Sensor noise covariance matrix (Y_SIZE x Y_SIZE)
     #dt: time step (1x1)
 
-    updateMassState!(tk, simParam.rocket.massData, simParam.rocket.motorData) #update mass with current time
     dz(t,zi) = stateDerivative(t, zi, simParam) #find state derivative
 
     #calculating the weights to be used
@@ -300,6 +307,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
+    updateMassState!(tk + dt, simParam.rocket.massData, simParam.rocket.motorData) #update mass with current time (tk + dt)
     hchi = zeros(Y_SIZE, size(chik1k)[2])
 
     for i = 1:size(chik1k)[2]
@@ -420,10 +428,11 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
         print("STEP: ")
         println(k)
         
+        updateMassState!(tspan[k], simParam.rocket.massData, simParam.rocket.motorData)
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
-        Rw = R(tspan[k], yhat(tspan[k], zhat[:,k], simParam), simParam.rocket)
+        Rw = R(tspan[k+1], yhat(tspan[k+1], zhat[:,k+1], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
 
     end
@@ -449,6 +458,7 @@ function noisySensorData(tspan::Vector{Float64}, z::Matrix{Float64}, simParam::s
     data = zeros(size(z)[1], Y_SIZE)
     for i = 1:size(data)[1]
 
+        updateMassState!(tspan[i], simParam.rocket.massData, simParam.rocket.motorData)
         data[i, :] = yhat(tspan[i], z[i,:], simParam)'
         Rk = R(tspan[i], data[i,:], simParam.rocket)
         
@@ -518,7 +528,7 @@ let
     h = [0.0, 1000, 2000, 3000]
 
     trueWind = windData(h, winds)
-    nsigma = 2.0
+    nsigma = 1.0
 
     #expected data
     simRead = readJSONParam("simParam.JSON")
