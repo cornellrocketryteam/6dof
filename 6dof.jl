@@ -417,7 +417,7 @@ end
 
 function getThrustVar(t::Float64)
 
-    return 0.1
+    return 0.02
     
 end
 
@@ -575,7 +575,7 @@ function getWind(t::Float64, h::Float64)
     #h: height above sea level
     #return: VAOI_I, Qw
 
-    return [0.0;0;0.0], 3 * diagm([1.0,1.0,0.1])
+    return [0.0;0;0.0]
 
 end
 
@@ -595,6 +595,12 @@ function getWind(t::Float64, h::Float64, wind::windData)
     end
 
     return wind.wind[:,i]
+
+end
+
+function getWindVar(t::Float64, h::Float64)
+
+    return 25 * diagm([1.0,1.0,1.0])
 
 end
 
@@ -1044,7 +1050,7 @@ function getAoAPlot_py(t, z::Matrix{Float64})
     aoa = zeros(size(z)[1])
 
     for (index, zi) in enumerate(eachrow(z))
-        vAOI_I = getWind(t[index], zi[3])[1]
+        vAOI_I = getWind(t[index], zi[3])   #MAJOR ERROR, CALLING FUNCTION THAT RETURNS NOTHING
         vRAI_I = getVRA(zi[4:6], vAOI_I)
         aoa[index] = calcAoA(vRAI_I, zi[7:10])
     end

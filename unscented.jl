@@ -71,17 +71,17 @@ end
 
 function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
 
-    Qwind = getWind(t, z[3])[2]
+    Qwind = getWindVar(t, z[3])
     thrust = motorThrustMass(t, lv.motorData, lv.massData.initalMass[2])[1]
     Ig_B = getIg(lv.massData)
     thrustVariation = getThrustVar(t)
 
-    addativeForceProcessNoise = 625.0 #Newtons^2
-    addativeMomentProcessNoise = 100.0  #(Nm)^2
+    addativeForceProcessNoise = 256.0 #Newtons^2
+    addativeMomentProcessNoise = 64.0 #(Nm)^2
 
     Q = zeros(W_SIZE,W_SIZE)
     Q[1:3,1:3] = Qwind
-    Q[4,4] = thrustVariation * thrust
+    Q[4,4] = (thrustVariation * thrust)^2
     Q[5:7,5:7] = addativeForceProcessNoise * diagm(ones(3))
     Q[8:10,8:10] = addativeMomentProcessNoise * diagm(ones(3))
 
@@ -196,9 +196,9 @@ end
 
 function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
-    accel_cov_factor = 0.0001 #(m^2s^-4)
+    accel_cov_factor = 0.001 #(m^2s^-4)
     accel_cov_base = 0.02   #(m^2s^-4)
-    gyro_cov_factor = 0.0001 #(s^-2)
+    gyro_cov_factor = 0.001 #(s^-2)
     baro_cov = 100 #(m^2)
     mag_cov = 0.01 #measurement error of the magnetic field directions
 
@@ -330,11 +330,6 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
-    #yk1k = hchi[:,1]
-
-    # print("yk1k: ")
-    # println(yk1k)
-    
     #covariance update
     Pk1k_yy = R
     Pk1k_zy = zeros(STATE_SIZE, Y_SIZE)
@@ -348,30 +343,21 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
         Pk1k_yy = Pk1k_yy + w * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
         Pk1k_zy = Pk1k_zy + w * (chitildak1k[:,i] - ztildak1k) * (hchi[:,i] - yk1k)'
-        # print(i)
-        # print(": Pk1k_zy: ")
-        # println(isposdef(Pk1k_zy))
 
     end
- 
-    # print("yk1-yk1k")
-    # println(yk1 - yk1k)
 
     ztildak1k1 = ztildak1k + Pk1k_zy * (Pk1k_yy \ (yk1 - yk1k))
     zk1k1 = ztilda2z(ztildak1k1, qk1k)
     Pkadjust = Hermitian(Pk1k_zy * (Pk1k_yy \ (Pk1k_zy')))
-
-    factor = 1.0
-    # print("Pkadjust: ")
-    # println(isposdef(Pkadjust))
     Pk1k1 = Pk1k - Pkadjust
 
-    while(!(isposdef(Pk1k1)) && factor > 0.01)
-        factor = factor * 0.9999999
-        print("Factor: ")
-        println(factor)
-        Pk1k1 = Pk1k - factor * Pkadjust
-    end
+    # factor = 1.0
+    # while(!(isposdef(Pk1k1)) && factor > 0.01)
+    #     factor = factor * 0.9999999
+    #     print("Factor: ")
+    #     println(factor)
+    #     Pk1k1 = Pk1k - factor * Pkadjust
+    # end
 
 
     return zk1k1, Pk1k1
@@ -443,12 +429,12 @@ end
 
 function testDataRun(simParam::sim, wind::windData, thrustVar::Float64)
 
-    simParamProcessNoise = copy(simParam)
-    simParamProcessNoise.simInputs.windData = wind
-    simParamProcessNoise.simInputs.thrustVar = thrustVar
+    simParamTrue = copy(simParam)
+    simParamTrue.simInputs.windData = wind
+    simParamTrue.simInputs.thrustVar = thrustVar
 
-    tspan, z = run(simParamProcessNoise)
-    data = noisySensorData(tspan, z, simParamProcessNoise)
+    tspan, z = run(simParamTrue)
+    data = noisySensorData(tspan, z, simParamTrue)
 
     return tspan, z, data
 end
@@ -498,8 +484,8 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
     title(t)
     plot(tspan, ztrue)
     plot(tspan, zhat)
-    plot(tspan, upperBound, "--")
-    plot(tspan, lowerBound, "--")
+    plot(tspan, upperBound, color="green", "--")
+    plot(tspan, lowerBound, color="green", "--")
     legend(["ztrue", "zhat"])
 
 end
@@ -515,42 +501,48 @@ function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat
     title(t)
     plot(tspan, (ztrue - zhat))
     axhline(y = 0.0, color="red")
-    plot(tspan, upperBound, "--")
-    plot(tspan, lowerBound, "--")
+    plot(tspan, upperBound, color="green", "--")
+    plot(tspan, lowerBound, color="green",  "--")
     legend(["error", "ztrue"])
 
 end
 
 let 
-    winds = [0.0 0.0 0.0 0; 
+    truewinds = [5.0 10.0 -10.0 0; 
              0 0  0 0;
              0  0  0 0]
+    expectedwinds = [0.0 0.0 0.0 0; 
+                0 0  0 0;
+                0  0  0 0]
+
     h = [0.0, 1000, 2000, 3000]
 
-    trueWind = windData(h, winds)
-    nsigma = 1.0
+    trueWind = windData(h, truewinds)
+    expectedWind = windData(h, expectedwinds)
+   
 
     #expected data
     simRead = readJSONParam("simParam.JSON")
-    setWindData!(simRead.simInputs, [0.0, 1000.0],  [0.0 0.0; 0.0 0.0; 0.0 0.0])
+    simRead.simInputs.windData = expectedWind
 
-    z0 = simRead.simInputs.z0
-
-    ds = [0.02, 0.02, 0.02]
-    dx = [10.0,10.0,10.0]
-    dv = [0.01,0.01,0.01]
-    dw = [0.01,0.01,0.01]
-
-    P0 = diagm(vcat(dx,dv,ds,dw))
-
+    # z0 = simRead.simInputs.z0
     # tspan, expected_z = run(simRead) 
 
-    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
+    #generate ztrue and data with true wind and thrust variation
+    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.05)
 
     # getQuiverPlot_py(expected_z, 1)
 
     getQuiverPlot_py(ztrue, 1)
 
+    ds = [0.02, 0.02, 0.02]
+    dx = [10.0,10.0,5.0]
+    dv = [0.01,0.01,0.01]
+    dw = [0.01,0.01,0.01]
+
+    P0 = diagm(vcat(dx,dv,ds,dw))
+
+    nsigma = 1.0
     zhat, Phat = @timev ukf(simRead, y, P0, nsigma)
 
     getQuiverPlot_py(transpose(zhat), 1)
@@ -561,8 +553,8 @@ let
     j = 6
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
 
-    j = 4
-    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v1")
+    j = 11
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1")
     
 
 
