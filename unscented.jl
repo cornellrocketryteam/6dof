@@ -76,8 +76,8 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
     Ig_B = getIg(lv.massData)
     thrustVariation = getThrustVar(t)
 
-    addativeForceProcessNoise = 256.0 #Newtons^2
-    addativeMomentProcessNoise = 64.0 #(Nm)^2
+    addativeForceProcessNoise = 400.0 #Newtons^2
+    addativeMomentProcessNoise = 100.0 #(Nm)^2
 
     Q = zeros(W_SIZE,W_SIZE)
     Q[1:3,1:3] = Qwind
@@ -195,10 +195,10 @@ end
 
 function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
-    accel_cov_factor = 0.001 #(m^2s^-4)
+    accel_cov_factor = 0.0005 #(m^2s^-4)
     accel_cov_base = 0.02   #(m^2s^-4)
-    gyro_cov_factor = 0.001 #(s^-2)
-    baro_cov = 100 #(m^2)
+    gyro_cov_factor = 0.0005 #(s^-2)
+    baro_cov = 25 #(m^2)
     mag_cov = 0.01 #measurement error of the magnetic field directions
 
     rvec = [ones(3) * accel_cov_factor; ones(3) * gyro_cov_factor; baro_cov; ones(3) * mag_cov]
@@ -424,14 +424,13 @@ function ukf(simParam::sim, y::Matrix{Float64}, z0::Vector{Float64}, P0::Matrix{
 
 end
 
-function testDataRun(simParam::sim, wind::windData, thrustVar::Float64)
+function testDataRun!(simParam::sim, wind::windData, thrustVar::Float64)
 
-    simParamTrue = copy(simParam)
-    simParamTrue.simInputs.windData = wind
-    simParamTrue.simInputs.thrustVar = thrustVar
+    simParam.simInputs.windData = wind
+    simParam.simInputs.thrustVar = thrustVar
 
-    tspan, z = run(simParamTrue)
-    data = noisySensorData(tspan, z, simParamTrue)
+    tspan, z = run(simParam)
+    data = noisySensorData(tspan, z, simParam)
 
     return tspan, z, data
 end
@@ -505,7 +504,7 @@ function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat
 end
 
 let 
-    truewinds = [5.0 10.0 -10.0 0; 
+    truewinds = [2.0 0.0 2.0 0; 
              0 0  0 0;
              0  0  0 0]
     expectedwinds = [0.0 0.0 0.0 0; 
@@ -516,16 +515,20 @@ let
 
     trueWind = windData(h, truewinds)
     expectedWind = windData(h, expectedwinds)
-   
+    
 
     #expected data
-    simRead = readJSONParam("simParam.JSON")
-    simRead.simInputs.windData = expectedWind
+    simTrue = readJSONParam("simParam.JSON")
+    simExpected = readJSONParam("simParam.JSON")
+
+    simExpected.simInputs.windData = expectedWind
+    simTrue.simInputs.windData = trueWind
+
 
     # tspan, expected_z = run(simRead) 
 
     #generate ztrue and data with true wind and thrust variation
-    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.05)
+    tspan, ztrue, y = testDataRun!(simTrue, trueWind, 1.00)
 
     # getQuiverPlot_py(expected_z, 1)
 
@@ -538,10 +541,11 @@ let
     #dCd = 2.0
 
     P0 = diagm(vcat(dx,dv,ds,dw))
-    z0 = simRead.simInputs.z0
+    z0 = simExpected.simInputs.z0
+
 
     nsigma = 1.0
-    zhat, Phat = @timev ukf(simRead, y, z0, P0, nsigma)
+    zhat, Phat = @timev ukf(simExpected, y, z0, P0, nsigma)
 
     getQuiverPlot_py(transpose(zhat), 1)
 
@@ -551,7 +555,7 @@ let
     j = 6
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
 
-    j = 11
+    j = 1
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1")
     
 
