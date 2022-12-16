@@ -31,7 +31,7 @@ include("6dof.jl")
 const global STATE_SIZE = 12 #estimator state size
 const global W_SIZE = 10;
 const global Y_SIZE = 10;
-const global Be_I = [0;1;0]::Vector #direction of the Earths magnetic field in the inertial frame
+const global Be_I = [0;1.0;0.0] #direction of the Earths magnetic field in the inertial frame
 
 
 #functions 
@@ -239,7 +239,9 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     #PREDICTION
 
-    ztildakk = z2ztilda(zkk, zkk[7:10])
+    qkk = zkk[7:10]
+
+    ztildakk = z2ztilda(zkk, qkk)
     
     chitilda = sigmaPoints_nsigma(ztildakk, STATE_SIZE, nsigma, Pkk) #make sigma points based on covarince
 
@@ -247,7 +249,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     for i = 1:size(chi)[2]
 
-        chi[:,i] = ztilda2z(chitilda[:,i], zkk[7:10])
+        chi[:,i] = ztilda2z(chitilda[:,i], qkk)
 
     end
 
@@ -255,16 +257,26 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     fchi = zeros(size(chi)[1], size(chi)[2])
 
     #sigma points for prediction step only
+    zk1k = zeros(R_STATE_SIZE,1) #make state prediction to retrieve propgated q
+    w = w0S
     for i = 1:size(chi)[2]
 
         fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma point
 
+        if i == 2
+            w = wi
+        end
+
+        #add new sigma point to state vector
+        zk1k = zk1k + w * fchi[:,i]
+
     end
+    qk1k = zk1k[7:10] #find propogated quaternion
 
     #transform each propogated sigma point back to estimator state
     chitildak1k =  chi = zeros(STATE_SIZE, size(chitilda)[2])
 
-    ztildak1k = zeros(STATE_SIZE,1)
+    ztildak1k = zeros(STATE_SIZE)
     w = w0S
     for i = 1:size(chi)[2]
 
@@ -272,10 +284,11 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
             w = wi
         end
 
-        chitildak1k[:,i] = z2ztilda(fchi[:,i], fchi[7:10, 1])
+        chitildak1k[:,i] = z2ztilda(fchi[:,i], qk1k)
 
         #add new sigma point to state vector
         ztildak1k = ztildak1k + w * chitildak1k[:,i]
+        
 
     end
 
@@ -294,23 +307,26 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
-
-   
-    hchi = zeros(Y_SIZE, size(chi)[2])
-
-
     #KALMAN UPDATE
     
     #redo sigma points with the predicted covariance
-    fchi = sigmaPoints_nsigma(zk1k, length(zk1k), nsigma, Pk1k) #new sigma points (already propgated as we are using zk1k)
+    chitildak1k = sigmaPoints_nsigma(ztildak1k, STATE_SIZE, nsigma, Pk1k) #new sigma points (already propgated as we are using ztildak1k)
 
-    for i = 1:size(chi)[2]
+    #transform new tilda sigma points to sigma points that can be plugged into yhat
+    chik1k = zeros(R_STATE_SIZE, size(chitilda)[2])
+    for i = 1:size(chik1k)[2]
 
-        hchi[:,i] = yhat(tk+dt, fchi[:,i], dz(tk+dt, fchi[:,i])) #predicted sensor measurement for each propogated sigma point
+        chik1k[:,i] = ztilda2z(chitildak1k[:,i], qk1k)
 
     end
 
+    hchi = zeros(Y_SIZE, size(chik1k)[2])
 
+    for i = 1:size(chik1k)[2]
+
+        hchi[:,i] = yhat(tk+dt, chik1k[:,i], dz(tk+dt, chik1k[:,i])) #predicted sensor measurement for each propogated sigma point
+
+    end
 
     #predicted sensor reading
     yk1k = zeros(Y_SIZE)
@@ -343,7 +359,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         end
 
         Pk1k_yy = Pk1k_yy + w * ((hchi[:,i] - yk1k) * (hchi[:,i] - yk1k)')
-        Pk1k_zy = Pk1k_zy + w * (fchi[:,i] - zk1k) * (hchi[:,i] - yk1k)'
+        Pk1k_zy = Pk1k_zy + w * (chitildak1k[:,i] - ztildak1k) * (hchi[:,i] - yk1k)'
         # print(i)
         # print(": Pk1k_zy: ")
         # println(isposdef(Pk1k_zy))
@@ -353,7 +369,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     # print("yk1-yk1k")
     # println(yk1 - yk1k)
 
-    zk1k1 = zk1k + Pk1k_zy * (Pk1k_yy \ (yk1 - yk1k))
+    ztildak1k1 = ztildak1k + Pk1k_zy * (Pk1k_yy \ (yk1 - yk1k))
+    zk1k1 = ztilda2z(ztildak1k1, qk1k)
     Pkadjust = Hermitian(Pk1k_zy * (Pk1k_yy \ (Pk1k_zy')))
 
     factor = 1.0
@@ -414,7 +431,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
     dt = tspan[2] - tspan[1] #assumes equal time spacing
 
 
-    zhat = zeros(STATE_SIZE, num_steps)
+    zhat = zeros(R_STATE_SIZE, num_steps) #system state
     Phat = zeros(STATE_SIZE, STATE_SIZE, num_steps)
     
     zhat[:,1] = simParam.simInputs.z0
@@ -523,6 +540,7 @@ let
     h = [0.0, 1000, 2000, 3000]
 
     trueWind = windData(h, winds)
+    nsigma = 1.0
 
     #expected data
     simRead = readJSONParam("simParam.JSON")
@@ -530,24 +548,39 @@ let
 
     z0 = simRead.simInputs.z0
 
-    display(z0)
-    z0tilda = z2ztilda(z0, z0[7:10])
-    display(z0tilda)
-    z0check = ztilda2z(z0tilda, z0[7:10])
-    display(z0check)
+    ds = [0.02, 0.02, 0.02]
+    dx = [10.0,10.0,10.0]
+    dv = [0.01,0.01,0.01]
+    dw = [0.01,0.01,0.01]
+
+    P0 = diagm(vcat(dx,dv,ds,dw))
+
+    q0 = z0[7:10]
+
+    ztildakk = z2ztilda(z0, q0)
     
+    chitilda = sigmaPoints_nsigma(ztildakk, STATE_SIZE, nsigma, P0) #make sigma points based on covarince
 
+    chi = zeros(R_STATE_SIZE, size(chitilda)[2])
 
-    #needs to match that in the sim param file
-    # n0 = [0,1.0,0]
-    # theta0 = 5 * pi/180
+    for i = 1:size(chi)[2]
 
-    # dq = ntheta2quatCov(n0, theta0, [0.1,0.1,0.1], 0.05)
-    # dx = [10.0,10.0,10.0]
-    # dv = [0.01,0.01,0.01]
-    # dw = [0.01,0.01,0.01]
+        chi[:,i] = ztilda2z(chitilda[:,i], q0)
 
-    # P0 = diagm(vcat(dx,dv,dq,dw))
+    end
+
+    b3Imat = zeros(3, size(chi)[2])
+
+    for i = 1:size(chi)[2]
+
+        b3Imat[:,i] = rotateFrame([0,0,1.0], quatInv(chi[7:10,i]))
+
+    end
+
+    pygui(true)
+    scatter3D(b3Imat[1,:],b3Imat[2,:],b3Imat[3,:])
+    scatter3D(0,0,0)
+
 
     # # tspan, expected_z = run(simRead) 
 
@@ -557,7 +590,7 @@ let
 
     # getQuiverPlot_py(ztrue, 1)
 
-    # zhat, Phat = @timev ukf(simRead, y, P0, 1.0)
+    # zhat, Phat = @timev ukf(simRead, y, P0, nsigma)
 
     # getQuiverPlot_py(transpose(zhat), 1)
 
@@ -575,6 +608,10 @@ let
 
 
     ##old tests
+
+        #needs to match that in the sim param file
+    # n0 = [0,1.0,0]
+    # theta0 = 5 * pi/180
 
     #code for displaying whole matrix thing 
     #show(IOContext(stdout, :limit=>false), MIME"text/plain"(), <MATRIX>)
