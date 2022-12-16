@@ -214,7 +214,7 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
     accel_cov_base = 0.02
     gyro_cov_factor = 0.05
     baro_cov = 100
-    mag_cov = 0.1 #measurement error of the magnetic field directions
+    mag_cov = 0.05 #measurement error of the magnetic field directions
 
     return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov])
     
@@ -271,10 +271,11 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         zk1k = zk1k + w * fchi[:,i]
 
     end
-    qk1k = zk1k[7:10] #find propogated quaternion
+    #qk1k = zk1k[7:10] #find propogated quaternion
+    qk1k = fchi[7:10,1]
 
     #transform each propogated sigma point back to estimator state
-    chitildak1k =  chi = zeros(STATE_SIZE, size(chitilda)[2])
+    chitildak1k = zeros(STATE_SIZE, size(chitilda)[2])
 
     ztildak1k = zeros(STATE_SIZE)
     w = w0S
@@ -555,59 +556,61 @@ let
 
     P0 = diagm(vcat(dx,dv,ds,dw))
 
-    q0 = z0[7:10]
-
-    ztildakk = z2ztilda(z0, q0)
     
-    chitilda = sigmaPoints_nsigma(ztildakk, STATE_SIZE, nsigma, P0) #make sigma points based on covarince
-
-    chi = zeros(R_STATE_SIZE, size(chitilda)[2])
-
-    for i = 1:size(chi)[2]
-
-        chi[:,i] = ztilda2z(chitilda[:,i], q0)
-
-    end
-
-    b3Imat = zeros(3, size(chi)[2])
-
-    for i = 1:size(chi)[2]
-
-        b3Imat[:,i] = rotateFrame([0,0,1.0], quatInv(chi[7:10,i]))
-
-    end
-
-    pygui(true)
-    scatter3D(b3Imat[1,:],b3Imat[2,:],b3Imat[3,:])
-    scatter3D(0,0,0)
 
 
-    # # tspan, expected_z = run(simRead) 
+    # tspan, expected_z = run(simRead) 
 
-    # tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
+    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
 
-    # # getQuiverPlot_py(expected_z, 1)
+    # getQuiverPlot_py(expected_z, 1)
 
-    # getQuiverPlot_py(ztrue, 1)
+    getQuiverPlot_py(ztrue, 1)
 
-    # zhat, Phat = @timev ukf(simRead, y, P0, nsigma)
+    zhat, Phat = @timev ukf(simRead, y, P0, nsigma)
 
-    # getQuiverPlot_py(transpose(zhat), 1)
+    getQuiverPlot_py(transpose(zhat), 1)
 
-    # j = 3
-    # plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3")
+    j = 3
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3")
 
-    # j = 6
-    # plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
+    j = 6
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
 
-    # j = 4
-    # plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v1")
+    j = 4
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v1")
     
 
 
 
 
     ##old tests
+
+    # q0 = z0[7:10]
+
+    # ztildakk = z2ztilda(z0, q0)
+    
+    # chitilda = sigmaPoints_nsigma(ztildakk, STATE_SIZE, nsigma, P0) #make sigma points based on covarince
+
+    # chi = zeros(R_STATE_SIZE, size(chitilda)[2])
+
+    # for i = 1:size(chi)[2]
+
+    #     chi[:,i] = ztilda2z(chitilda[:,i], q0)
+
+    # end
+
+    # b3Imat = zeros(3, size(chi)[2])
+
+    # for i = 1:size(chi)[2]
+
+    #     b3Imat[:,i] = rotateFrame([0,0,1.0], quatInv(chi[7:10,i]))
+
+    # end
+
+    # pygui(true)
+    # scatter3D(b3Imat[1,:],b3Imat[2,:],b3Imat[3,:])
+    # scatter3D(0,0,0)
 
         #needs to match that in the sim param file
     # n0 = [0,1.0,0]
