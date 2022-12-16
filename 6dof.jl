@@ -168,7 +168,7 @@ end
 function fillCd!(aeroChar::aeroCharacterization, Cd::Float64)
 
     aeroChar.Cd .= Cd
-    
+
 end
 
 function setWindData!(simInputs::simInputs, heights::Vector{Float64}, winds::Matrix{Float64})
@@ -424,7 +424,9 @@ end
 #needs work
 function getThrustVar(t::Float64)
 
-    return 0.08
+    #Gaussian thrust variation as expected by 
+
+    return 0.2
     
 end
 

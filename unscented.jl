@@ -24,12 +24,13 @@
 #y: Measurement 11x1: [y_accel, y_gyro, y_barox3, y_magb]
 #R: Sensor noise covariance 10x10
 #w: [ww1, ww2, ww3, wt, wF1, wF2, wF3, wm1, wm2, wm3] 
-#Q: Process noise covariance 4x4
+#Q: Process noise covariance WSIZExWSIZE
 
 include("6dof.jl")
 
-const global STATE_SIZE = 12 #estimator state size
-const global W_SIZE = 10;
+const global STATE_SIZE = 13 #estimator state size
+const global RE_STATE_SIZE = 14 #estimator and rocket state (rocket state + parameters)
+const global W_SIZE = 11;
 const global Y_SIZE = 10;
 const global Be_I = [0;1.0;0.0] #direction of the Earths magnetic field in the inertial frame
 global a = 1.0 #constant used in the back and forth between generalizedd Rodrigues error vector and error quaternion
@@ -64,6 +65,8 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, simParam::sim)
     dfd_dwd = dt * 0.5 * getCd(aoa, mach, simParam.rocket.aeroData) * getA(aoa, simParam.rocket.aeroData) * expAtm(z[3]) * (vRAI_I * transpose(vRAI_I) / mag_vRAI_I + (I * mag_vRAI_I))/m
 
     Gw[4:6, 1:3] = dfd_dwd;
+
+    Gw[13, 11] = 1.0;  #process noise for the motor thrust parameter
     
     return Gw
 
@@ -78,12 +81,14 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
 
     addativeForceProcessNoise = 400.0 #Newtons^2
     addativeMomentProcessNoise = 100.0 #(Nm)^2
+    thrustParamCov = 1e-5
 
     Q = zeros(W_SIZE,W_SIZE)
     Q[1:3,1:3] = Qwind
     Q[4,4] = (thrustVariation * thrust)^2
     Q[5:7,5:7] = addativeForceProcessNoise * diagm(ones(3))
     Q[8:10,8:10] = addativeMomentProcessNoise * diagm(ones(3))
+    Q[11,11] = thrustParamCov
 
     return Q
 end
@@ -212,7 +217,7 @@ end
 #prediction step of unscented kalman filter
 function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, simParam::sim, nsigma::Float64)
     #tk: systetm time at known step (1x1)
-    #zkk: system state at current time (known) (R_STATE_SIZEx1)
+    #zkk: system state at current time (known) (RE_STATE_SIZEx1)
     #Pkk: system covariance (STATE_SIZE x STATE_SIZE)
     #yk1: measurement at time t + dt (Y_SIZE x 1)
     #Gw: matrix that transforms process noise covarince to state covariance (STATE_SIZE x W_SIZE)
@@ -228,12 +233,18 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #PREDICTION
 
     qkk = zkk[7:10]
+    # simParam.simInputs.thrustVar = zkk[14] #set thrustVar as alpha
+    # print("zkk14: ")
+    # println(zkk[14])
+
+    # print("ThrustVarStartUKF: ")
+    # println(simParam.simInputs.thrustVar)
 
     ztildakk = z2ztilda(zkk, qkk)
     
     chitilda = sigmaPoints_nsigma(ztildakk, STATE_SIZE, nsigma, Pkk) #make sigma points based on covarince
 
-    chi = zeros(R_STATE_SIZE, size(chitilda)[2])
+    chi = zeros(RE_STATE_SIZE, size(chitilda)[2])
 
     for i = 1:size(chi)[2]
 
@@ -248,7 +259,9 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     w = w0S
     for i = 1:size(chi)[2]
 
-        fchi[:,i] = rk4Step(dz, tk, chi[:,i], dt) #propgate each sigma point
+        simParam.simInputs.thrustVar = chi[14,i]
+        fchi[1:R_STATE_SIZE,i] = rk4Step(dz, tk, chi[1:R_STATE_SIZE,i], dt) #propgate each sigma point
+        fchi[R_STATE_SIZE+1:RE_STATE_SIZE, i] = chi[R_STATE_SIZE+1:RE_STATE_SIZE,i] #propgating the parameters is just copying them
 
     end
     qk1k = fchi[7:10,1]
@@ -269,7 +282,6 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
         #add new sigma point to state vector
         ztildak1k = ztildak1k + w * chitildak1k[:,i]
         
-
     end
 
     #covariance predict
@@ -288,12 +300,13 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     end
 
     #KALMAN UPDATE
+
     
     #redo sigma points with the predicted covariance
     chitildak1k = sigmaPoints_nsigma(ztildak1k, STATE_SIZE, nsigma, Pk1k) #new sigma points (already propgated as we are using ztildak1k)
 
     #transform new tilda sigma points to sigma points that can be plugged into yhat
-    chik1k = zeros(R_STATE_SIZE, size(chitilda)[2])
+    chik1k = zeros(RE_STATE_SIZE, size(chitilda)[2])
     
     #chik1k = fchi
     for i = 1:size(chik1k)[2]
@@ -303,11 +316,13 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     end
 
     updateMassState!(tk + dt, simParam.rocket.massData, simParam.rocket.motorData) #update mass with current time (tk + dt)
+
     hchi = zeros(Y_SIZE, size(chik1k)[2])
 
     for i = 1:size(chik1k)[2]
 
-        hchi[:,i] = yhat(tk+dt, chik1k[:,i], dz(tk+dt, chik1k[:,i])) #predicted sensor measurement for each propogated sigma point
+        simParam.simInputs.thrustVar = chik1k[14,i]
+        hchi[:,i] = yhat(tk+dt, chik1k[1:R_STATE_SIZE,i], dz(tk+dt, chik1k[1:R_STATE_SIZE,i])) #predicted sensor measurement for each propogated sigma point
 
     end
 
@@ -329,7 +344,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     Pk1k_yy = R
     Pk1k_zy = zeros(STATE_SIZE, Y_SIZE)
     w = w0C #set weight to the first index
-    for i = 1:size(chi)[2]
+    for i = 1:size(hchi)[2]
 
         #flip to other weight after the first index is added
         if i == 2
@@ -354,15 +369,16 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     #     Pk1k1 = Pk1k - factor * Pkadjust
     # end
 
+    simParam.simInputs.thrustVar = zk1k1[14]
 
     return zk1k1, Pk1k1
 
 end
 
 function ztilda2z(ztilda::Vector{Float64}, qbase::Vector{Float64})
-    #ztilda: estimator state 
+    #ztilda: estimator state (STATE_SIZE x 1)
     #qbase: quaternion that ds is based from 
-    #returns: z (system state) with updated quaternion 
+    #returns: z (system state) with updated quaternion (RE_STATE_SIZE)
 
     f = 2 * (a + 1)
 
@@ -370,12 +386,12 @@ function ztilda2z(ztilda::Vector{Float64}, qbase::Vector{Float64})
     qnew = quatProd(dq, qbase)
     
 
-    return [ztilda[1:6]; qnew; ztilda[10:12]]
+    return [ztilda[1:6]; qnew; ztilda[10:STATE_SIZE]]
 
 end
 
 function z2ztilda(z::Vector{Float64}, qbase::Vector{Float64})
-    #z: System state vector (R_STATE_SIZE x 1)
+    #z: System state vector (RE_STATE_SIZE x 1)
     #qbase: 
     #returns: ztilda --> estimation state vector with ds = 0 (STATE_SIZE x 1)
 
@@ -384,7 +400,7 @@ function z2ztilda(z::Vector{Float64}, qbase::Vector{Float64})
     dq = quatProd(z[7:10], quatInv(qbase))
     ds = quatError2rev(dq, f, a)
 
-    return [z[1:6]; ds; z[11:13]]
+    return [z[1:6]; ds; z[11:RE_STATE_SIZE]]
 
 end
 
@@ -400,7 +416,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, z0::Vector{Float64}, P0::Matrix{
     dt = tspan[2] - tspan[1] #assumes equal time spacing
 
 
-    zhat = zeros(R_STATE_SIZE, num_steps) #system state
+    zhat = zeros(RE_STATE_SIZE, num_steps) #system state
     Phat = zeros(STATE_SIZE, STATE_SIZE, num_steps)
     
     zhat[:,1] = z0
@@ -410,13 +426,17 @@ function ukf(simParam::sim, y::Matrix{Float64}, z0::Vector{Float64}, P0::Matrix{
 
         print("STEP: ")
         println(k)
+        print("Thrust Var")
+        println(zhat[14,k])
         
         updateMassState!(tspan[k], simParam.rocket.massData, simParam.rocket.motorData)
+
 
         Gw = getGw(tspan[k], zhat[:,k], dt, simParam)
         Q = getQ(tspan[k], zhat[:,k], simParam.rocket)
         Rw = R(tspan[k+1], yhat(tspan[k+1], zhat[:,k+1], simParam), simParam.rocket)
         zhat[:,k+1], Phat[:,:,k+1] = ukf_step(tspan[k], zhat[:,k], Phat[:,:,k], y[k+1,:], Gw, Q, Rw, dt, simParam, nsigma)
+        
 
     end
 
@@ -428,11 +448,18 @@ function testDataRun!(simParam::sim, wind::windData, thrustVar::Float64)
 
     simParam.simInputs.windData = wind
     simParam.simInputs.thrustVar = thrustVar
+    
+    return testDataRun!(simParam)
+    
+end
+
+function testDataRun!(simParam::sim)
 
     tspan, z = run(simParam)
     data = noisySensorData(tspan, z, simParam)
 
     return tspan, z, data
+
 end
 
 function noisySensorData(tspan::Vector{Float64}, z::Matrix{Float64}, simParam::sim)
@@ -486,6 +513,17 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
 
 end
 
+function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, t::String)
+
+    pygui(true)
+    figure()
+    title(t)
+    plot(tspan, ztrue)
+    plot(tspan, zhat)
+    legend(["ztrue", "zhat"])
+
+end
+
 
 function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, t::String)
 
@@ -503,8 +541,9 @@ function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat
 
 end
 
+
 let 
-    truewinds = [2.0 0.0 2.0 0; 
+    truewinds = [0.0 0.0 0.0 0; 
              0 0  0 0;
              0  0  0 0]
     expectedwinds = [0.0 0.0 0.0 0; 
@@ -523,12 +562,13 @@ let
 
     simExpected.simInputs.windData = expectedWind
     simTrue.simInputs.windData = trueWind
+    simTrue.simInputs.thrustVar = 1.1
 
 
     # tspan, expected_z = run(simRead) 
 
     #generate ztrue and data with true wind and thrust variation
-    tspan, ztrue, y = testDataRun!(simTrue, trueWind, 1.00)
+    tspan, ztrue, y = testDataRun!(simTrue)
 
     # getQuiverPlot_py(expected_z, 1)
 
@@ -538,10 +578,14 @@ let
     dx = [10.0,10.0,5.0]
     dv = [0.01,0.01,0.01]
     dw = [0.01,0.01,0.01]
-    #dCd = 2.0
+    dTv = 1e-6
 
-    P0 = diagm(vcat(dx,dv,ds,dw))
+    P0 = diagm(vcat(dx,dv,ds,dw, dTv))
+
     z0 = simExpected.simInputs.z0
+    initalThrustVarEstimate = 1.0 #you assume it is going to perform nominally
+    simExpected.simInputs.thrustVar = initalThrustVarEstimate  #set thrust var to be correct inital value
+    z0 = vcat(z0, initalThrustVarEstimate)
 
 
     nsigma = 1.0
@@ -557,6 +601,8 @@ let
 
     j = 1
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1")
+
+    plotEstimator(tspan, ones(2000) * simTrue.simInputs.thrustVar, zhat[14,:], "thrustVar")
     
 
 
