@@ -32,7 +32,7 @@ const global STATE_SIZE = 12 #estimator state size
 const global W_SIZE = 10;
 const global Y_SIZE = 10;
 const global Be_I = [0;1.0;0.0] #direction of the Earths magnetic field in the inertial frame
-const global a = 1.0 #constant used in the back and forth between generalizedd Rodrigues error vector and error quaternion
+global a = 1.0 #constant used in the back and forth between generalizedd Rodrigues error vector and error quaternion
 
 
 #functions 
@@ -174,7 +174,6 @@ function sigmaPointsWeights(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
 
 end
 
-
 #sensor function
 function yhat(t::Float64, zhat::Vector{Float64}, simParam::sim)
 
@@ -208,10 +207,6 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
     return diagm(rvec)
     
-end
-
-function R_datagen(t::Float64, yhat::Vector{Float64}, lv::rocket)
-
 end
 
 #prediction step of unscented kalman filter
@@ -378,6 +373,7 @@ function ztilda2z(ztilda::Vector{Float64}, qbase::Vector{Float64})
     return [ztilda[1:6]; qnew; ztilda[10:12]]
 
 end
+
 function z2ztilda(z::Vector{Float64}, qbase::Vector{Float64})
     #z: System state vector (R_STATE_SIZE x 1)
     #qbase: 
@@ -392,9 +388,10 @@ function z2ztilda(z::Vector{Float64}, qbase::Vector{Float64})
 
 end
 
-function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Float64)
+function ukf(simParam::sim, y::Matrix{Float64}, z0::Vector{Float64}, P0::Matrix{Float64}, nsigma::Float64)
     #simParam: sim struct that describes the expected behavior of the system (expected wind + ideal motor)
     #y: matrix containing all the generated sensor data (length(tspan) x Y_SIZE)
+    #z0: starting value for state estimator
     #P0: initial covariance matrix
     #nsigma: parameter for chosing sigma points --> distance of sigma points from mean
 
@@ -406,7 +403,7 @@ function ukf(simParam::sim, y::Matrix{Float64}, P0::Matrix{Float64}, nsigma::Flo
     zhat = zeros(R_STATE_SIZE, num_steps) #system state
     Phat = zeros(STATE_SIZE, STATE_SIZE, num_steps)
     
-    zhat[:,1] = simParam.simInputs.z0
+    zhat[:,1] = z0
     Phat[:,:,1] = P0
 
     for k = 1:num_steps - 1
@@ -525,7 +522,6 @@ let
     simRead = readJSONParam("simParam.JSON")
     simRead.simInputs.windData = expectedWind
 
-    # z0 = simRead.simInputs.z0
     # tspan, expected_z = run(simRead) 
 
     #generate ztrue and data with true wind and thrust variation
@@ -539,11 +535,13 @@ let
     dx = [10.0,10.0,5.0]
     dv = [0.01,0.01,0.01]
     dw = [0.01,0.01,0.01]
+    #dCd = 2.0
 
     P0 = diagm(vcat(dx,dv,ds,dw))
+    z0 = simRead.simInputs.z0
 
     nsigma = 1.0
-    zhat, Phat = @timev ukf(simRead, y, P0, nsigma)
+    zhat, Phat = @timev ukf(simRead, y, z0, P0, nsigma)
 
     getQuiverPlot_py(transpose(zhat), 1)
 

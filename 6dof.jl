@@ -165,6 +165,12 @@ function addData!(previous::aeroCharacterization, dataPoint::aeroDataPoint)
 
 end
 
+function fillCd!(aeroChar::aeroCharacterization, Cd::Float64)
+
+    aeroChar.Cd .= Cd
+    
+end
+
 function setWindData!(simInputs::simInputs, heights::Vector{Float64}, winds::Matrix{Float64})
 
     simInputs.windData = windData(heights, winds)
