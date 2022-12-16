@@ -32,6 +32,7 @@ const global STATE_SIZE = 12 #estimator state size
 const global W_SIZE = 10;
 const global Y_SIZE = 10;
 const global Be_I = [0;1.0;0.0] #direction of the Earths magnetic field in the inertial frame
+global a = 1.0
 
 
 #functions 
@@ -173,21 +174,6 @@ function sigmaPointsWeights(zhat::Vector{Float64}, n::Int, Pkk::Matrix{Float64})
 
 end
 
-function ntheta2quatCov(n::Vector{Float64}, theta::Float64, dn::Vector{Float64}, dtheta::Float64)
-    #n: rotation axis
-    #theta: rotation angle
-    #dn: diagonal elements of n covariance (assuming no cross covariance)
-    #dtheta: covariance of angle theta
-    #returns: dq diagonal of covariance of quaternion 
-
-    #not sure how riggorus this is?
-
-    dq_theta = vcat(0.5 * cos(theta/2) * n * dtheta, -0.5 * sin(theta/2) * dtheta)
-    dq = dq_theta + vcat(dn, 0)
-
-    return dq .* dq
-
-end
 
 #sensor function
 function yhat(t::Float64, zhat::Vector{Float64}, simParam::sim)
@@ -306,6 +292,8 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     #transform new tilda sigma points to sigma points that can be plugged into yhat
     chik1k = zeros(R_STATE_SIZE, size(chitilda)[2])
+    
+    #chik1k = fchi
     for i = 1:size(chik1k)[2]
 
         chik1k[:,i] = ztilda2z(chitildak1k[:,i], qk1k)
@@ -371,7 +359,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     Pk1k1 = Pk1k - Pkadjust
 
     while(!(isposdef(Pk1k1)) && factor > 0.01)
-        factor = factor * 0.9999
+        factor = factor * 0.9999999
         print("Factor: ")
         println(factor)
         Pk1k1 = Pk1k - factor * Pkadjust
@@ -387,7 +375,6 @@ function ztilda2z(ztilda::Vector{Float64}, qbase::Vector{Float64})
     #qbase: quaternion that ds is based from 
     #returns: z (system state) with updated quaternion 
 
-    a = 0.5
     f = 2 * (a + 1)
 
     dq = rev2quatError(ztilda[7:9], f, a)
@@ -402,7 +389,6 @@ function z2ztilda(z::Vector{Float64}, qbase::Vector{Float64})
     #qbase: 
     #returns: ztilda --> estimation state vector with ds = 0 (STATE_SIZE x 1)
 
-    a = 0.5
     f = 2 * (a + 1)
 
     dq = quatProd(z[7:10], quatInv(qbase))
@@ -532,7 +518,7 @@ let
     h = [0.0, 1000, 2000, 3000]
 
     trueWind = windData(h, winds)
-    nsigma = 1.0
+    nsigma = 2.0
 
     #expected data
     simRead = readJSONParam("simParam.JSON")
@@ -546,9 +532,6 @@ let
     dw = [0.01,0.01,0.01]
 
     P0 = diagm(vcat(dx,dv,ds,dw))
-
-    
-
 
     # tspan, expected_z = run(simRead) 
 
