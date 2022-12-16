@@ -415,6 +415,7 @@ function motorThrustMass(t::Float64, motorData::Matrix{Float64}, initalPropMass:
     return motorData[indexLow,2] + (motorData[indexLow + 1, 2] - motorData[indexLow,2])/(motorData[indexLow + 1, 1] - motorData[indexLow,1]) * (t - motorData[indexLow, 1]), initalPropMass - initalPropMass * t / burnTime
 end
 
+#needs work
 function getThrustVar(t::Float64)
 
     return 0.02
@@ -570,6 +571,7 @@ function Ig_solidCylinder(m::Float64, h::Float64, R::Float64)
 
 end
 
+#not really used
 function getWind(t::Float64, h::Float64)
     #t: time since ignition
     #h: height above sea level
@@ -598,6 +600,7 @@ function getWind(t::Float64, h::Float64, wind::windData)
 
 end
 
+#needs work
 function getWindVar(t::Float64, h::Float64)
 
     return 25 * diagm([1.0,1.0,1.0])
@@ -1194,7 +1197,6 @@ function run(parameterPath::String)
     return run(simParam)
 
 end
-
 
 function aeroData_Cd_Mach(mach, Cd_Mach)
     #mach: array of mach numbers

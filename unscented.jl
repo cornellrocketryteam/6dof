@@ -1,4 +1,4 @@
-#Unscented Kalman Filter Implimentation for Cornell Rocketry Real-Time State Estimation
+#Sigma Point Filter (UKF) Implimentation for Cornell Rocketry Real-Time State Estimation
 #Developed by Sam Noles in 2022
 
 #PyPlot Plotting Examples: https://gist.github.com/gizmaa/7214002#multiaxis
@@ -32,7 +32,7 @@ const global STATE_SIZE = 12 #estimator state size
 const global W_SIZE = 10;
 const global Y_SIZE = 10;
 const global Be_I = [0;1.0;0.0] #direction of the Earths magnetic field in the inertial frame
-global a = 1.0
+const global a = 1.0 #constant used in the back and forth between generalizedd Rodrigues error vector and error quaternion
 
 
 #functions 
