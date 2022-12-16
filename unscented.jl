@@ -10,20 +10,28 @@
 #v: inertial frame derivative of r in intertial frame coordinates 4,5,6
 #q: quaternion representing rotation from inertial to body frame 7,8,9,10
     #aka apply q to a vector written in I cordinates to get the same vector written in body frame coordinates
-#w:IwB rotatoin of B frame wrt to the inertial frame 11,12,13
+#w:IwB rotation of B frame wrt to the inertial frame 11,12,13
+
+#estimator state: ztilda = [r v ds w]
+#r: position of R (tip of nose cone) wrt to O (ground) in inertial frame 1,2,3
+#v: inertial frame derivative of r in intertial frame coordinates 4,5,6
+#ds: generalize Rodrigues error vector representing error from the quaternion in the system state
+#w:IwB rotation of B frame wrt to the inertial frame 11,12,13
+
 
 ###Estimator#####
 
-#y: Measurement 11x1: [y_accel, y_gyro, y_barox3, y_magq]
-#R: Sensor noise covariance 11x11
+#y: Measurement 11x1: [y_accel, y_gyro, y_barox3, y_magb]
+#R: Sensor noise covariance 10x10
 #w: [ww1, ww2, ww3, wt, wF1, wF2, wF3, wm1, wm2, wm3] 
 #Q: Process noise covariance 4x4
 
 include("6dof.jl")
 
-const global STATE_SIZE = 13 #estimation state size (including parameters)
+const global STATE_SIZE = 12 #estimator state size
 const global W_SIZE = 10;
-const global Y_SIZE = 11;
+const global Y_SIZE = 10;
+const global Be_I = [0;1;0]::Vector #direction of the Earths magnetic field in the inertial frame
 
 
 #functions 
@@ -42,7 +50,7 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, simParam::sim)
     #contribution from thrust uncertainty
     Gw[6, 4] = dt / m
     Gw[4:6, 5:7] = (dt / m) * diagm(ones(3))  #contribution of general forcing uncertainty
-    Gw[11:13, 8:10] = dt * inv(getIg(simParam.rocket.massData)) #contribution of general moment uncertainty
+    Gw[10:12, 8:10] = dt * inv(getIg(simParam.rocket.massData)) #contribution of general moment uncertainty
 
     vAOI_I = getWind(t, z[3], simParam.simInputs.windData)
     vRAI_I = getVRA(z[4:6], vAOI_I)
@@ -193,9 +201,9 @@ function yhat(t::Float64, zhat::Vector{Float64}, dz::Vector{Float64})
     accel = dz[4:6]
     w_gyro = zhat[11:13]
     x3 = zhat[3]
-    q = zhat[7:10]
+    Be_B = rotateFrame(Be_I, zhat[7:10]) #direction of the earths magnetic field measured in body frame components
 
-    return [accel; w_gyro; x3; q]
+    return [accel; w_gyro; x3; Be_B]
 
 
 end
@@ -206,40 +214,45 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
     accel_cov_base = 0.02
     gyro_cov_factor = 0.05
     baro_cov = 100
-    mag_cov = 0.1 # no idea how to do this covariance 
+    mag_cov = 0.1 #measurement error of the magnetic field directions
 
-    return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov, mag_cov])
-
-        
-
+    return diagm([abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov])
     
 end
 
 #prediction step of unscented kalman filter
 function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, simParam::sim, nsigma::Float64)
-    #tk: systetm time at known step 
-    #zkk: system state at current time (known)
-    #Pkk: system covariance
-    #yk1: measurement at time t + dt
-    #Gw: matrix that transforms process noise covarince to state covariance
-    #Q: process noise covriance matrix
-    #R: Sensor noise covariance matrix
-    #dt: time step
+    #tk: systetm time at known step (1x1)
+    #zkk: system state at current time (known) (R_STATE_SIZEx1)
+    #Pkk: system covariance (STATE_SIZE x STATE_SIZE)
+    #yk1: measurement at time t + dt (Y_SIZE x 1)
+    #Gw: matrix that transforms process noise covarince to state covariance (STATE_SIZE x W_SIZE)
+    #Q: process noise covriance matrix (W_SIZE x W_SIZE)
+    #R: Sensor noise covariance matrix (Y_SIZE x Y_SIZE)
+    #dt: time step (1x1)
 
     updateMassState!(tk, simParam.rocket.massData, simParam.rocket.motorData) #update mass with current time
     dz(t,zi) = stateDerivative(t, zi, simParam) #find state derivative
-    
-    chi = sigmaPoints_nsigma(zkk, length(zkk), nsigma, Pkk)
 
     #calculating the weights to be used
     w0S, w0C, wi = nsigma_weights(nsigma)
-    # print("w0S: ")
-    # println(w0S)
 
+    #PREDICTION
 
-    #calculating states for uncented sums 
+    ztildakk = z2ztilda(zkk, zkk[7:10])
+    
+    chitilda = sigmaPoints_nsigma(ztildakk, STATE_SIZE, nsigma, Pkk) #make sigma points based on covarince
+
+    chi = zeros(R_STATE_SIZE, size(chitilda)[2])
+
+    for i = 1:size(chi)[2]
+
+        chi[:,i] = ztilda2z(chitilda[:,i], zkk[7:10])
+
+    end
+
+    #propgate each sigma point
     fchi = zeros(size(chi)[1], size(chi)[2])
-    hchi = zeros(Y_SIZE, size(chi)[2])
 
     #sigma points for prediction step only
     for i = 1:size(chi)[2]
@@ -248,43 +261,43 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     end
 
-    #PREDICTION
+    #transform each propogated sigma point back to estimator state
+    chitildak1k =  chi = zeros(STATE_SIZE, size(chitilda)[2])
 
-    #state predict
-    zk1k = zeros(STATE_SIZE)
+    ztildak1k = zeros(STATE_SIZE,1)
     w = w0S
-    for (index,fadd) in enumerate(eachcol(fchi))
+    for i = 1:size(chi)[2]
 
-        #flip to other weight after the first index is added
-        if index == 2
+        if i == 2
             w = wi
         end
-        
-        zk1k = zk1k + w * fadd
+
+        chitildak1k[:,i] = z2ztilda(fchi[:,i], fchi[7:10, 1])
+
+        #add new sigma point to state vector
+        ztildak1k = ztildak1k + w * chitildak1k[:,i]
 
     end
 
-    #println(quatMag(zk1k[7:10]))
-
-    #zk1k = fchi[:,1]
-
-    # print("zk1k: ")
-    # println(zk1k)
-
-    #covarince predeict
+    #covariance predict
     Pk1k = Gw * Q * Gw' #initialize with process noise addition
     w = w0C #set weight to the first index
-    for (index,fadd) in enumerate(eachcol(fchi))
+    for (index,fadd) in enumerate(eachcol(chitildak1k))
 
         #flip to other weight after the first index is added
         if index == 2
             w = wi
         end
         
-        fadd = Hermitian((fadd - zk1k) * (fadd - zk1k)')
+        fadd = Hermitian((fadd - ztildak1k) * (fadd - ztildak1k)')
         Pk1k = Matrix(Hermitian(Pk1k + w * fadd))
 
     end
+
+
+   
+    hchi = zeros(Y_SIZE, size(chi)[2])
+
 
     #KALMAN UPDATE
     
@@ -357,6 +370,36 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
 
     return zk1k1, Pk1k1
+
+end
+
+function ztilda2z(ztilda::Vector{Float64}, qbase::Vector{Float64})
+    #ztilda: estimator state 
+    #qbase: quaternion that ds is based from 
+    #returns: z (system state) with updated quaternion 
+
+    a = 0.5
+    f = 2 * (a + 1)
+
+    dq = rev2quatError(ztilda[7:9], f, a)
+    qnew = quatProd(dq, qbase)
+    
+
+    return [ztilda[1:6]; qnew; ztilda[10:12]]
+
+end
+function z2ztilda(z::Vector{Float64}, qbase::Vector{Float64})
+    #z: System state vector (R_STATE_SIZE x 1)
+    #qbase: 
+    #returns: ztilda --> estimation state vector with ds = 0 (STATE_SIZE x 1)
+
+    a = 0.5
+    f = 2 * (a + 1)
+
+    dq = quatProd(z[7:10], quatInv(qbase))
+    ds = quatError2rev(dq, f, a)
+
+    return [z[1:6]; ds; z[11:13]]
 
 end
 
@@ -485,37 +528,47 @@ let
     simRead = readJSONParam("simParam.JSON")
     setWindData!(simRead.simInputs, [0.0, 1000.0],  [0.0 0.0; 0.0 0.0; 0.0 0.0])
 
+    z0 = simRead.simInputs.z0
+
+    display(z0)
+    z0tilda = z2ztilda(z0, z0[7:10])
+    display(z0tilda)
+    z0check = ztilda2z(z0tilda, z0[7:10])
+    display(z0check)
+    
+
+
     #needs to match that in the sim param file
-    n0 = [0,1.0,0]
-    theta0 = 5 * pi/180
+    # n0 = [0,1.0,0]
+    # theta0 = 5 * pi/180
 
-    dq = ntheta2quatCov(n0, theta0, [0.1,0.1,0.1], 0.05)
-    dx = [10.0,10.0,10.0]
-    dv = [0.01,0.01,0.01]
-    dw = [0.01,0.01,0.01]
+    # dq = ntheta2quatCov(n0, theta0, [0.1,0.1,0.1], 0.05)
+    # dx = [10.0,10.0,10.0]
+    # dv = [0.01,0.01,0.01]
+    # dw = [0.01,0.01,0.01]
 
-    P0 = diagm(vcat(dx,dv,dq,dw))
+    # P0 = diagm(vcat(dx,dv,dq,dw))
 
-    # tspan, expected_z = run(simRead) 
+    # # tspan, expected_z = run(simRead) 
 
-    tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
+    # tspan, ztrue, y = testDataRun(simRead, trueWind, 1.0)
 
-    # getQuiverPlot_py(expected_z, 1)
+    # # getQuiverPlot_py(expected_z, 1)
 
-    getQuiverPlot_py(ztrue, 1)
+    # getQuiverPlot_py(ztrue, 1)
 
-    zhat, Phat = @timev ukf(simRead, y, P0, 1.0)
+    # zhat, Phat = @timev ukf(simRead, y, P0, 1.0)
 
-    getQuiverPlot_py(transpose(zhat), 1)
+    # getQuiverPlot_py(transpose(zhat), 1)
 
-    j = 3
-    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3")
+    # j = 3
+    # plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3")
 
-    j = 6
-    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
+    # j = 6
+    # plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
 
-    j = 4
-    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v1")
+    # j = 4
+    # plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v1")
     
 
 

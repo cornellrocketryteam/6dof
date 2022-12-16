@@ -32,7 +32,7 @@ using Base
 include("quat.jl")
 
 
-const global R_STATE_SIZE = 13 #state vector for just the dynamics, no parameter estimation
+const global R_STATE_SIZE = 13 #state vector for just the dynamics, no parameter estimation, used for anything being plugged into the dynamics
 Random.seed!(1234)
 
 ########structs################
