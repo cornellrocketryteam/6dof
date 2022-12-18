@@ -79,9 +79,9 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
     Ig_B = getIg(lv.massData)
     thrustVariation = sqrt(.16)
 
-    addativeForceProcessNoise = 400.0 #Newtons^2
+    addativeForceProcessNoise = 500.0 #Newtons^2
     addativeMomentProcessNoise = 100.0 #(Nm)^2
-    thrustParamCov = 0.02
+    thrustParamCov = 0.04
 
     Q = zeros(W_SIZE,W_SIZE)
     Q[1:3,1:3] = Qwind
@@ -201,14 +201,11 @@ end
 function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
 
     accel_cov_factor = 0.0005 #(m^2s^-4)
-    accel_cov_base = 0.02   #(m^2s^-4)
     gyro_cov_factor = 0.0005 #(s^-2)
-    baro_cov = 25 #(m^2)
+    baro_cov = 9 #(m^2)
     mag_cov = 0.01 #measurement error of the magnetic field directions
 
     rvec = [ones(3) * accel_cov_factor; ones(3) * gyro_cov_factor; baro_cov; ones(3) * mag_cov]
-    #rvec = [abs(yhat[1]) * accel_cov_factor + accel_cov_base, abs(yhat[2]) * accel_cov_factor + accel_cov_base, abs(yhat[3]) * accel_cov_factor + accel_cov_base, abs(yhat[4]) * gyro_cov_factor, abs(yhat[5]) * gyro_cov_factor, abs(yhat[6]) * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov]
-    #rvec = [yhat[1]^2 * accel_cov_factor + accel_cov_base, yhat[2]^2 * accel_cov_factor + accel_cov_base, yhat[3]^2 * accel_cov_factor + accel_cov_base, yhat[4]^2 * gyro_cov_factor, yhat[5]^2 * gyro_cov_factor, yhat[6]^2 * gyro_cov_factor, baro_cov, mag_cov,mag_cov, mag_cov]
 
     return diagm(rvec)
     
@@ -509,7 +506,9 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
     plot(tspan, zhat)
     plot(tspan, upperBound, color="green", "--")
     plot(tspan, lowerBound, color="green", "--")
-    legend(["ztrue", "zhat"])
+    legend(["error", "ztrue", "2σ bound"])
+    xlabel("time (s)")
+    ylabel(t)
 
 end
 
@@ -521,6 +520,8 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
     plot(tspan, ztrue)
     plot(tspan, zhat)
     legend(["ztrue", "zhat"])
+    xlabel("time (s)")
+    ylabel(t)
 
 end
 
@@ -535,18 +536,21 @@ function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat
     title(t)
     plot(tspan, (ztrue - zhat))
     axhline(y = 0.0, color="red")
+    axvline(x = 2.483, color="gray")
     plot(tspan, upperBound, color="green", "--")
     plot(tspan, lowerBound, color="green",  "--")
-    legend(["error", "ztrue"])
+    legend(["error", "ztrue", "burnout", "2σ bound"])
+    xlabel("time (s)")
+    ylabel(t * "Error")
 
 end
 
 
 let 
-    truewinds = [0.0 0.0 0.0 0; 
+    truewinds = [0.0 5.0 0.0 0; 
              0 0  0 0;
              0  0  0 0]
-    expectedwinds = [0.0 0.0 0.0 0; 
+    expectedwinds = [0.0 5.0 0.0 0; 
                 0 0  0 0;
                 0  0  0 0]
 
@@ -557,42 +561,38 @@ let
     
 
     #expected data
-    simTrue = readJSONParam("simParam.JSON")
-    simExpected = readJSONParam("simParam.JSON")
+    simTrue = readJSONParam("simParam.JSON") #simParm used for generating data and true values
+    simExpected = readJSONParam("simParam.JSON") #simParam used for the estimator 
 
     simExpected.simInputs.windData = expectedWind
 
     #setting parameters for data generation
-    thrustVarMean = 1.1
+    thrustVarMean = 1.05 #mean multiple of ideal thrust at each time step
+    thrustVarCov = .0025 #variation of multiple of ideal thrust at each time step
     simTrue.simInputs.windData = trueWind
     simTrue.simInputs.isDataGen = true
-    simTrue.simInputs.dataGenThrustVar = rand(Normal(thrustVarMean, .01), length(simTrue.simInputs.tspan))
-    display(simTrue.simInputs.dataGenThrustVar)
-
-
-    # tspan, expected_z = run(simRead) 
+    simTrue.simInputs.dataGenThrustVar = rand(Normal(thrustVarMean, thrustVarCov), length(simTrue.simInputs.tspan))
 
     #generate ztrue and data with true wind and thrust variation
     tspan, ztrue, y = testDataRun!(simTrue)
 
-    # getQuiverPlot_py(expected_z, 1)
-
     getQuiverPlot_py(ztrue, 1)
 
+    #setting up initial covariance
     ds = [0.02, 0.02, 0.02]
     dx = [10.0,10.0,5.0]
     dv = [0.01,0.01,0.01]
     dw = [0.01,0.01,0.01]
     dTv = 1e-4
-
     P0 = diagm(vcat(dx,dv,ds,dw, dTv))
 
     z0 = simExpected.simInputs.z0
     initalThrustVarEstimate = 1.0 #you assume it is going to perform nominally
     simExpected.simInputs.thrustVar = initalThrustVarEstimate  #set thrust var to be correct inital value
-    z0 = vcat(z0, initalThrustVarEstimate)
-    println(simExpected.simInputs.isDataGen)
 
+    #setting up z0 vector with the parameters at the end
+    z0 = vcat(z0, initalThrustVarEstimate) 
+    println(simExpected.simInputs.isDataGen)
 
     nsigma = 1.0
     zhat, Phat = @timev ukf(simExpected, y, z0, P0, nsigma)
@@ -605,10 +605,11 @@ let
     j = 6
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
 
-    j = 1
+    j = 11
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1")
 
-    plotEstimatorError(tspan[1:200], ones(200) * thrustVarMean, zhat[14,1:200], Phat[13,13,1:200], "thrustVar")
+    plotnumber = 235
+    plotEstimatorError(tspan[1:plotnumber], ones(plotnumber) * thrustVarMean, zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "thrustVar")
     
 
 

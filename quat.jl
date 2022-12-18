@@ -69,6 +69,8 @@ end
 
 function quatError2rev(dq::Vector{Float64}, f::Float64, a::Float64)
 
+    #Crassidis, John. (2006). Sigma-Point Kalman Filtering for Integrated GPS and Inertial Navigation. Aerospace and Electronic Systems, IEEE Transactions on. 42. 750 - 756. 10.1109/TAES.2006.1642588. 
+
     return (f/(a + dq[4])) * dq[1:3]
 
 end
