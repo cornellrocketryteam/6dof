@@ -15,7 +15,7 @@
 #estimator state: ztilda = [r v ds w]
 #r: position of R (tip of nose cone) wrt to O (ground) in inertial frame 1,2,3
 #v: inertial frame derivative of r in intertial frame coordinates 4,5,6
-#ds: generalize Rodrigues error vector representing error from the quaternion in the system state
+#ds: generalized Rodrigues error vector representing error from the quaternion in the system state
 #w:IwB rotation of B frame wrt to the inertial frame 11,12,13
 
 
@@ -77,11 +77,11 @@ function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
     Qwind = getWindVar(t, z[3])
     thrust = motorThrustMass(t, lv.motorData, lv.massData.initalMass[2])[1]
     Ig_B = getIg(lv.massData)
-    thrustVariation = getThrustVar(t)
+    thrustVariation = sqrt(.16)
 
     addativeForceProcessNoise = 400.0 #Newtons^2
     addativeMomentProcessNoise = 100.0 #(Nm)^2
-    thrustParamCov = 1e-5
+    thrustParamCov = 0.02
 
     Q = zeros(W_SIZE,W_SIZE)
     Q[1:3,1:3] = Qwind
@@ -259,7 +259,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     w = w0S
     for i = 1:size(chi)[2]
 
-        simParam.simInputs.thrustVar = chi[14,i]
+        simParam.simInputs.thrustVar = chi[14,i] #set thrustVar to parameter in each sigma-point
         fchi[1:R_STATE_SIZE,i] = rk4Step(dz, tk, chi[1:R_STATE_SIZE,i], dt) #propgate each sigma point
         fchi[R_STATE_SIZE+1:RE_STATE_SIZE, i] = chi[R_STATE_SIZE+1:RE_STATE_SIZE,i] #propgating the parameters is just copying them
 
@@ -321,7 +321,7 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
 
     for i = 1:size(chik1k)[2]
 
-        simParam.simInputs.thrustVar = chik1k[14,i]
+        simParam.simInputs.thrustVar = chik1k[14,i] #set thrustVar to sigma point value before calculating sensor value
         hchi[:,i] = yhat(tk+dt, chik1k[1:R_STATE_SIZE,i], dz(tk+dt, chik1k[1:R_STATE_SIZE,i])) #predicted sensor measurement for each propogated sigma point
 
     end
@@ -561,8 +561,13 @@ let
     simExpected = readJSONParam("simParam.JSON")
 
     simExpected.simInputs.windData = expectedWind
+
+    #setting parameters for data generation
+    thrustVarMean = 1.1
     simTrue.simInputs.windData = trueWind
-    simTrue.simInputs.thrustVar = 1.1
+    simTrue.simInputs.isDataGen = true
+    simTrue.simInputs.dataGenThrustVar = rand(Normal(thrustVarMean, .01), length(simTrue.simInputs.tspan))
+    display(simTrue.simInputs.dataGenThrustVar)
 
 
     # tspan, expected_z = run(simRead) 
@@ -578,7 +583,7 @@ let
     dx = [10.0,10.0,5.0]
     dv = [0.01,0.01,0.01]
     dw = [0.01,0.01,0.01]
-    dTv = 1e-9
+    dTv = 1e-4
 
     P0 = diagm(vcat(dx,dv,ds,dw, dTv))
 
@@ -586,6 +591,7 @@ let
     initalThrustVarEstimate = 1.0 #you assume it is going to perform nominally
     simExpected.simInputs.thrustVar = initalThrustVarEstimate  #set thrust var to be correct inital value
     z0 = vcat(z0, initalThrustVarEstimate)
+    println(simExpected.simInputs.isDataGen)
 
 
     nsigma = 1.0
@@ -602,7 +608,7 @@ let
     j = 1
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1")
 
-    plotEstimator(tspan, ones(2000) * simTrue.simInputs.thrustVar, zhat[14,:], "thrustVar")
+    plotEstimatorError(tspan[1:200], ones(200) * thrustVarMean, zhat[14,1:200], Phat[13,13,1:200], "thrustVar")
     
 
 

@@ -104,8 +104,10 @@ mutable struct simInputs
 
     windData::windData
     thrustVar::Float64
+    isDataGen::Bool
+    dataGenThrustVar::Vector{Float64}
 
-    simInputs(t, z0, latLong) = new(t, z0, latLong, windData(), 1.0)
+    simInputs(t, z0, latLong) = new(t, z0, latLong, windData(), 1.0, false, zeros(1))
     simInputs(t, z0, latLong, windData, thrustVar) = new(t, z0, latLong, windData, thrustVar)
 end
 
@@ -731,6 +733,16 @@ function stateDerivative(t::Float64, z::Vector{Float64}, simParam::sim)
     #z: state
     #simParam: sim object that holds all necesarry information to simulate the system
 
+    
+    #decide thrust var based on simParam settings
+    if(simParam.simInputs.isDataGen)
+        #get index associated with time t
+        dt = simParam.simInputs.tspan[2] - simParam.simInputs.tspan[1]
+        tround = round(t / dt) * dt
+        #k = findfirst(item -> abs.(item .- tround) < 1e-14, simParam.simInputs.tspan)
+        k = findmin(abs.(tround .- simParam.simInputs.tspan))[2]
+        simParam.simInputs.thrustVar = simParam.simInputs.dataGenThrustVar[k]
+    end
 
     #get aero forces/moments
     totalAero_I, aeroMoment_B = totalAeroForceMoment(t, z, simParam.rocket.aeroData, simParam.rocket.massData, simParam.simInputs.windData)
@@ -1225,7 +1237,7 @@ function aeroData_Cd_Mach(mach, Cd_Mach)
 end
 
 #code body
-let
+#let
     
 
 #     simParam = readJSONParam("simParam.JSON")
@@ -1458,4 +1470,4 @@ let
     # plot(tspan, result)
 
 
-end
+#end
