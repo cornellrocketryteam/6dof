@@ -54,17 +54,18 @@ function getGw(t::Float64, z::Vector{Float64}, dt::Float64, simParam::sim)
     Gw[4:6, 5:7] = (dt / m) * diagm(ones(3))  #contribution of general forcing uncertainty
     Gw[10:12, 8:10] = dt * inv(getIg(simParam.rocket.massData)) #contribution of general moment uncertainty
 
-    vAOI_I = getWind(t, z[3], simParam.simInputs.windData)
-    vRAI_I = getVRA(z[4:6], vAOI_I)
-    mag_vRAI_I = norm(vRAI_I)
-    aoa = calcAoA(vRAI_I, z[7:10])
-    mach = calcMach(vRAI_I, z[3])
+    # vAOI_I = getWind(t, z[3], simParam.simInputs.windData)
+    # vRAI_I = getVRA(z[4:6], vAOI_I)
+    # mag_vRAI_I = norm(vRAI_I)
+    # aoa = calcAoA(vRAI_I, z[7:10])
+    # mach = calcMach(vRAI_I, z[3])
 
 
     #wind uncertainty
-    dfd_dwd = dt * 0.5 * getCd(aoa, mach, simParam.rocket.aeroData) * getA(aoa, simParam.rocket.aeroData) * expAtm(z[3]) * (vRAI_I * transpose(vRAI_I) / mag_vRAI_I + (I * mag_vRAI_I))/m
+    #dfd_dwd = dt * 0.5 * getCd(aoa, mach, simParam.rocket.aeroData) * getA(aoa, simParam.rocket.aeroData) * expAtm(z[3]) * (vRAI_I * transpose(vRAI_I) / mag_vRAI_I + (I * mag_vRAI_I))/m
 
-    Gw[4:6, 1:3] = dfd_dwd;
+    #Gw[4:6, 1:3] = dfd_dwd;
+    Gw[4:6, 1:3] = zeros(3,3)
 
     Gw[13, 11] = 1.0;  #process noise for the motor thrust parameter
     
@@ -74,12 +75,12 @@ end
 
 function getQ(t::Float64, z::Vector{Float64}, lv::rocket)
 
-    Qwind = getWindVar(t, z[3])
+    #Qwind = getWindVar(t, z[3])
+    Qwind = zeros(3,3)
     thrust = motorThrustMass(t, lv.motorData, lv.massData.initalMass[2])[1]
-    Ig_B = getIg(lv.massData)
     thrustVariation = sqrt(.16)
 
-    addativeForceProcessNoise = 500.0 #Newtons^2
+    addativeForceProcessNoise = 400.0 #Newtons^2
     addativeMomentProcessNoise = 100.0 #(Nm)^2
     thrustParamCov = 0.04
 
@@ -203,7 +204,7 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
     accel_cov_factor = 0.0005 #(m^2s^-4)
     gyro_cov_factor = 0.0005 #(s^-2)
     baro_cov = 9 #(m^2)
-    mag_cov = 0.01 #measurement error of the magnetic field directions
+    mag_cov = 0.04 #measurement error of the magnetic field directions
 
     rvec = [ones(3) * accel_cov_factor; ones(3) * gyro_cov_factor; baro_cov; ones(3) * mag_cov]
 
@@ -526,7 +527,7 @@ function plotEstimator(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vec
 end
 
 
-function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, t::String)
+function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat::Vector{Float64}, Pu::Vector{Float64}, t::String, showBurnOut::Bool)
 
     pygui(true)
     upperBound = 2 * sqrt.(Pu)
@@ -536,12 +537,18 @@ function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat
     title(t)
     plot(tspan, (ztrue - zhat))
     axhline(y = 0.0, color="red")
-    axvline(x = 2.483, color="gray")
     plot(tspan, upperBound, color="green", "--")
     plot(tspan, lowerBound, color="green",  "--")
-    legend(["error", "ztrue", "burnout", "2σ bound"])
     xlabel("time (s)")
-    ylabel(t * "Error")
+    ylabel("Error " * t)
+    if(showBurnOut)
+    
+        axvline(x = 2.483, color="gray") #hard coded from thrust curve file /Users/Sam/Code/6dof/Cesaroni_13628N5600-P.eng
+        legend(["error", "ztrue", "burnout", "2σ bound"])
+    
+    else
+        legend(["error", "ztrue", "burnout"])
+    end
 
 end
 
@@ -572,6 +579,7 @@ let
     simTrue.simInputs.windData = trueWind
     simTrue.simInputs.isDataGen = true
     simTrue.simInputs.dataGenThrustVar = rand(Normal(thrustVarMean, thrustVarCov), length(simTrue.simInputs.tspan))
+    simTrue.simInputs.dataGenThrustVar[100:end] = simTrue.simInputs.dataGenThrustVar[100:end] .+ 0.05
 
     #generate ztrue and data with true wind and thrust variation
     tspan, ztrue, y = testDataRun!(simTrue)
@@ -600,16 +608,17 @@ let
     getQuiverPlot_py(transpose(zhat), 1)
 
     j = 3
-    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3")
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3 (m)", true)
 
     j = 6
-    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3")
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "v3 (m/s)", true)
 
     j = 11
-    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1")
+    plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1 (rad/s)", true)
 
-    plotnumber = 235
-    plotEstimatorError(tspan[1:plotnumber], ones(plotnumber) * thrustVarMean, zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "thrustVar")
+    plotnumber = 220
+    plotEstimatorError(tspan[1:plotnumber], simTrue.simInputs.dataGenThrustVar[1:plotnumber], zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "thrustVar", false)
+    plotEstimator(tspan[1:plotnumber], simTrue.simInputs.dataGenThrustVar[1:plotnumber], zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "thrustVar")
     
 
 
