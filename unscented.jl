@@ -212,7 +212,7 @@ function R(t::Float64, yhat::Vector{Float64}, lv::rocket)
     
 end
 
-#prediction step of unscented kalman filter
+#full step of unscented kalman filter
 function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::Vector{Float64}, Gw::Matrix{Float64}, Q::Matrix{Float64}, R::Matrix{Float64}, dt::Float64, simParam::sim, nsigma::Float64)
     #tk: systetm time at known step (1x1)
     #zkk: system state at current time (known) (RE_STATE_SIZEx1)
@@ -298,7 +298,6 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     end
 
     #KALMAN UPDATE
-
     
     #redo sigma points with the predicted covariance
     chitildak1k = sigmaPoints_nsigma(ztildak1k, STATE_SIZE, nsigma, Pk1k) #new sigma points (already propgated as we are using ztildak1k)
@@ -359,14 +358,6 @@ function ukf_step(tk::Float64, zkk::Vector{Float64}, Pkk::Matrix{Float64}, yk1::
     Pkadjust = Hermitian(Pk1k_zy * (Pk1k_yy \ (Pk1k_zy')))
     Pk1k1 = Pk1k - Pkadjust
 
-    # factor = 1.0
-    # while(!(isposdef(Pk1k1)) && factor > 0.01)
-    #     factor = factor * 0.9999999
-    #     print("Factor: ")
-    #     println(factor)
-    #     Pk1k1 = Pk1k - factor * Pkadjust
-    # end
-
     simParam.simInputs.thrustVar = zk1k1[14]
 
     return zk1k1, Pk1k1
@@ -390,8 +381,8 @@ end
 
 function z2ztilda(z::Vector{Float64}, qbase::Vector{Float64})
     #z: System state vector (RE_STATE_SIZE x 1)
-    #qbase: 
-    #returns: ztilda --> estimation state vector with ds = 0 (STATE_SIZE x 1)
+    #qbase: Base quaternion that Rodrigues error vectors are based on
+    #returns: ztilda --> state representation with Rodrigues error vector
 
     f = 2 * (a + 1)
 
@@ -606,6 +597,16 @@ let
     zhat, Phat = @timev ukf(simExpected, y, z0, P0, nsigma)
 
     getQuiverPlot_py(transpose(zhat), 1)
+
+    #Generating orientation plots 
+    ds = zeros(3, size(ztrue)[1])
+    for i = 1:size(ztrue)[1]
+        zhold = z2ztilda(zhat[:,i], ztrue[i,7:10])
+        ds[:,i] = zhold[7:9]
+    end
+
+    l = 1
+    plotEstimatorError(tspan, zeros(size(ds)[2]), ds[l,:], Phat[6 + l,6 + l,:], "ds1", true)
 
     j = 3
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "x3 (m)", true)
