@@ -1001,7 +1001,7 @@ function getQuiverPlot_py(z::AbstractArray{Float64}, secondDirection::Int)
     end
 
     #shorten array of b3_I vectors (not as many)
-    numToPlot = 30
+    numToPlot = 20
     array = floor.(Int, collect(LinRange(1, size(z)[1], numToPlot)))
     x = zeros(size(array))
     y = zeros(size(array))

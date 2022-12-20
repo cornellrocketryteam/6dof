@@ -528,17 +528,19 @@ function plotEstimatorError(tspan::Vector{Float64}, ztrue::Vector{Float64}, zhat
     title(t)
     plot(tspan, (ztrue - zhat))
     axhline(y = 0.0, color="red")
-    plot(tspan, upperBound, color="green", "--")
-    plot(tspan, lowerBound, color="green",  "--")
     xlabel("time (s)")
     ylabel("Error " * t)
     if(showBurnOut)
     
         axvline(x = 2.483, color="gray") #hard coded from thrust curve file /Users/Sam/Code/6dof/Cesaroni_13628N5600-P.eng
+        plot(tspan, upperBound, color="green", "--")
+        plot(tspan, lowerBound, color="green",  "--")
         legend(["error", "ztrue", "burnout", "2σ bound"])
     
     else
-        legend(["error", "ztrue", "burnout"])
+        plot(tspan, upperBound, color="green", "--")
+        plot(tspan, lowerBound, color="green",  "--")
+        legend(["error", "ztrue", "2σ bound"])
     end
 
 end
@@ -578,11 +580,11 @@ let
     getQuiverPlot_py(ztrue, 1)
 
     #setting up initial covariance
-    ds = [0.02, 0.02, 0.02]
+    ds = [0.005, 0.005, 0.005]
     dx = [10.0,10.0,5.0]
     dv = [0.01,0.01,0.01]
     dw = [0.01,0.01,0.01]
-    dTv = 1e-4
+    dTv = 1e-2
     P0 = diagm(vcat(dx,dv,ds,dw, dTv))
 
     z0 = simExpected.simInputs.z0
@@ -591,7 +593,7 @@ let
 
     #setting up z0 vector with the parameters at the end
     z0 = vcat(z0, initalThrustVarEstimate) 
-    println(simExpected.simInputs.isDataGen)
+    println(simExpected.simInputs.isDataGen) 
 
     nsigma = 1.0
     zhat, Phat = @timev ukf(simExpected, y, z0, P0, nsigma)
@@ -617,9 +619,9 @@ let
     j = 11
     plotEstimatorError(tspan, ztrue[:,j], zhat[j,:], Phat[j,j,:], "w1 (rad/s)", true)
 
-    plotnumber = 220
-    plotEstimatorError(tspan[1:plotnumber], simTrue.simInputs.dataGenThrustVar[1:plotnumber], zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "thrustVar", false)
-    plotEstimator(tspan[1:plotnumber], simTrue.simInputs.dataGenThrustVar[1:plotnumber], zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "thrustVar")
+    plotnumber = 200
+    plotEstimatorError(tspan[1:plotnumber], simTrue.simInputs.dataGenThrustVar[1:plotnumber], zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "α", false)
+    plotEstimator(tspan[1:plotnumber], simTrue.simInputs.dataGenThrustVar[1:plotnumber], zhat[14,1:plotnumber], Phat[13,13,1:plotnumber], "α")
     
 
 
